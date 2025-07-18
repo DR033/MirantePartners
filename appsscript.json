@@ -1,0 +1,38 @@
+{
+  "timeZone": "America/Sao_Paulo",
+  "dependencies": {},
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/script.container.ui",
+    "https://www.googleapis.com/auth/userinfo.email"
+  ],
+  "urlFetchWhitelist": [
+    "https://api.anthropic.com/",
+    "https://api.apollo.io/",
+    "https://api.openai.com/",
+    "https://duckduckgo.com/",
+    "https://www.google.com/",
+    "https://dns.google/",
+    "https://m.linkedin.com/",
+    "https://api.brightdata.com/"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Mirante Partners Toolkit ⛰️",
+      "logoUrl": "https://mirantepartners.com/media/pages/resources/c233b598ec-1752629365/mirante_black_64.png",
+      "layoutProperties": {
+        "primaryColor": "#27721f"
+      },
+      "useLocaleFromApp": true
+    },
+    "sheets": {
+      "onFileScopeGrantedTrigger": {
+        "runFunction": "onOpen"
+      }
+    }
+  }
+}
