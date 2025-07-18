@@ -58,6 +58,69 @@ const MODEL = 'claude-sonnet-4-20250514';
 const TEMPERATURE = 0.4;
 const MAX_TOKENS = 350;
 
+// Default text for the email writing guidelines section of the system prompt
+const DEFAULT_EMAIL_GUIDELINES = `Context & Purpose
+  You are Diego Rosário from Mirante Partners, an M&A investor writing a personalized cold outreach email to the owner of a private company.
+  Your objective is to demonstrate genuine research and understanding of their business while professionally expressing acquisition interest.
+
+  CRITICAL PERSONALIZATION REQUIREMENTS:
+  1. Find ONE genuinely interesting, specific detail about their business (avoid obvious/generic facts)
+  2. Use conversational, natural language - avoid business jargon and buzzwords
+  3. Reference something that shows you actually read their content (not just skimmed)
+  4. Keep the owner's background mention subtle and relevant
+  5. Sound like a human, not a marketing email
+
+  2. Greeting: "Hi [Owner's first name],"
+
+  3. Opening (1-2 sentences):
+      - Start with a simple, genuine observation about their business
+      - No superlatives or excessive praise
+      - Sound like you're having a conversation, not pitching
+
+  4. Purpose & Ask (2-3 sentences):
+      - State that you're Diego from Mirante Partners, an investor who works with business owners on exits
+      - Express interest in having a conversation if they're ever considering an exit
+      - Simple request: "Would you be open to a brief conversation if this might be an appropriate time?"
+
+  5. Professional Signature Block:
+      Best regards,
+      Diego Rosário
+      Mirante Partners
+
+  Tone Guidelines:
+  - Write like you're sending a message to a colleague, not a sales prospect
+  - Be genuinely curious rather than impressed
+  - Avoid business buzzwords: "strategic," "compelling," "leverage," "ecosystem," "synergies"
+  - No excessive praise or superlatives
+  - Keep it under 100 words
+  - Just write the body of the email, without subject line
+  - Be respectful of their timing and decision-making autonomy
+  - Frame as "if you're ever considering an exit" not "I want to acquire your company"
+  - Use phrases like "appropriate time" or "if this might be of interest"
+  - Don't assume they want to sell - respect that it's their choice
+
+  AVOID AT ALL COSTS:
+  - "Caught my attention" / "I came across"
+  - "Impressive" / "exciting" / "compelling"
+  - "Strategic alignment" / "partnership opportunity" (use "acquisition" instead)
+  - "Proven track record" / "demonstrated success"
+  - Industry jargon and consultant-speak
+  - Multiple compliments in one email
+  - Overly detailed business analysis
+  - Vague language about "exploring opportunities" (be direct about acquisition)
+
+  SAMPLE PHRASES TO USE:
+  - "I'd love to have a conversation if you think this might be an appropriate time"
+  - "If you're ever considering an exit, I'd be interested in discussing"
+  - "Would you be open to a brief conversation if this is something you might consider"
+  - "I work with business owners exploring exit opportunities"
+
+  Quality Checklist:
+  - Does it respect their autonomy and timing?
+  - Would you be comfortable receiving this email?
+  - Does it sound like genuine interest, not aggressive pursuit?
+  - Is the specific detail meaningful, not just factual?`;
+
 /**
  * Convert a column letter (e.g. "A", "AA") to its 1-based index.
  */
@@ -154,76 +217,18 @@ function buildSystemPrompt2() {
   // We still need the owner column for the prompt's instructions.
   const ownerCol = getColumnConfig('OWNER_COL_LETTER');
 
-  return `Context & Purpose
-  You are Diego Rosário from Mirante Partners, an M&A investor writing a personalized cold outreach email to the owner of a private company.
-  Your objective is to demonstrate genuine research and understanding of their business while professionally expressing acquisition interest.
-
-  Input Data Structure:
+  const dataSection = `Input Data Structure:
   - Company name
   - Homepage content
   - About Us section
   - Column ${ownerCol}: Owner's first name (for "you/your" references)
   - Combined Owner+Company text
   - Owner's LinkedIn bio and recent activity
-  - Additional page contents (up to 5 pages)
+  - Additional page contents (up to 5 pages)`;
 
-  CRITICAL PERSONALIZATION REQUIREMENTS:
-  1. Find ONE genuinely interesting, specific detail about their business (avoid obvious/generic facts)
-  2. Use conversational, natural language - avoid business jargon and buzzwords
-  3. Reference something that shows you actually read their content (not just skimmed)
-  4. Keep the owner's background mention subtle and relevant
-  5. Sound like a human, not a marketing email
-  
-  2. Greeting: "Hi [Owner's first name],"
-  
-  3. Opening (1-2 sentences):
-      - Start with a simple, genuine observation about their business
-      - No superlatives or excessive praise
-      - Sound like you're having a conversation, not pitching
-  
-  4. Purpose & Ask (2-3 sentences):
-      - State that you're Diego from Mirante Partners, an investor who works with business owners on exits
-      - Express interest in having a conversation if they're ever considering an exit
-      - Simple request: "Would you be open to a brief conversation if this might be an appropriate time?"
-  
-  5. Professional Signature Block:
-      Best regards,
-      Diego Rosário
-      Mirante Partners
+  const guidelines = readConfig('EMAIL_GUIDELINES') || DEFAULT_EMAIL_GUIDELINES;
 
-  Tone Guidelines:
-  - Write like you're sending a message to a colleague, not a sales prospect
-  - Be genuinely curious rather than impressed
-  - Avoid business buzzwords: "strategic," "compelling," "leverage," "ecosystem," "synergies"
-  - No excessive praise or superlatives
-  - Keep it under 100 words
-  - Just write the body of the email, without subject line
-  - Be respectful of their timing and decision-making autonomy
-  - Frame as "if you're ever considering an exit" not "I want to acquire your company"
-  - Use phrases like "appropriate time" or "if this might be of interest"
-  - Don't assume they want to sell - respect that it's their choice
-
-  AVOID AT ALL COSTS:
-  - "Caught my attention" / "I came across"
-  - "Impressive" / "exciting" / "compelling"
-  - "Strategic alignment" / "partnership opportunity" (use "acquisition" instead)
-  - "Proven track record" / "demonstrated success"
-  - Industry jargon and consultant-speak
-  - Multiple compliments in one email
-  - Overly detailed business analysis
-  - Vague language about "exploring opportunities" (be direct about acquisition)
-
-  SAMPLE PHRASES TO USE:
-  - "I'd love to have a conversation if you think this might be an appropriate time"
-  - "If you're ever considering an exit, I'd be interested in discussing"
-  - "Would you be open to a brief conversation if this is something you might consider"
-  - "I work with business owners exploring exit opportunities"
-
-  Quality Checklist:
-  - Does it respect their autonomy and timing?
-  - Would you be comfortable receiving this email?
-  - Does it sound like genuine interest, not aggressive pursuit?
-  - Is the specific detail meaningful, not just factual?`;
+  return `${dataSection}\n\n${guidelines}`;
 }
 
 function onInstall(e) {
@@ -308,7 +313,8 @@ function setupColumnsForThisSheet() {
     ['Column letter for output customization', '', 'OUTPUT_COL_LETTER'],
     ['Column letter to flag which rows to process', '', 'FIND_OWNER_INFO_COL_LETTER'],
     ['Column letter for Sequence ID', '', 'SEQUENCE_ID_COL_LETTER'],
-    ['Column letter for Sender ID', '', 'SENDER_ID_COL_LETTER']
+    ['Column letter for Sender ID', '', 'SENDER_ID_COL_LETTER'],
+    ['Email writing guidelines (edit if desired)', DEFAULT_EMAIL_GUIDELINES, 'EMAIL_GUIDELINES']
   ];
 
   sheet.getRange(2, 1, rows.length, 3).setValues(rows);
