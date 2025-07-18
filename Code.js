@@ -16,7 +16,7 @@ function ensureConfigSheet() {
   let sheet = ss.getSheetByName('999-config');
   if (!sheet) {
     sheet = ss.insertSheet('999-config');
-    sheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
+    sheet.getRange(1, 1, 1, 3).setValues([['Key', 'Value', 'Description']]);
   }
   return sheet;
 }
@@ -286,59 +286,34 @@ function onOpen(e) {
  * Saved in the 999-config sheet so each spreadsheet retains its own setup.
  */
 function setupColumnsForThisSheet() {
-  requireAdmin();  // Only administrators can run this setup
+  requireAdmin();
 
-  const ui          = SpreadsheetApp.getUi();
-  const scriptProps = PropertiesService.getScriptProperties();
+  const ui    = SpreadsheetApp.getUi();
+  const sheet = ensureConfigSheet();
 
-  // Ensure config sheet exists
-  ensureConfigSheet();
+  // Clear existing config and write headers
+  sheet.clear();
+  sheet.getRange(1, 1, 1, 3)
+       .setValues([['Key', 'Value', 'Description']]);
 
-  // 1️⃣ Prompt for the data‐sheet name (saved to Script Properties)
-  const sheetResp = ui.prompt(
-    'Data Sheet & Column Setup',
-    'Enter the exact name of the sheet that holds your data rows:',
-    ui.ButtonSet.OK_CANCEL
-  );
-  if (sheetResp.getSelectedButton() !== ui.Button.OK) {
-    ui.alert('Setup cancelled.');
-    return;
-  }
-  const sheetName = sheetResp.getResponseText().trim();
-  if (!sheetName) {
-    ui.alert('No sheet name entered – setup cancelled.');
-    return;
-  }
-  writeConfig('SHEET_NAME', sheetName);
+  const rows = [
+    ['SHEET_NAME',                '', 'Write the name of sheet you want to run the script'],
+    ['COMPANY_COL_LETTER',        '', 'Column letter for Company name'],
+    ['WEBSITE_COL_LETTER',        '', 'Column letter for Website URL'],
+    ['CUSTOM_INDUSTRY_COL_LETTER','', 'Column letter for Industry'],
+    ['OWNER_COL_LETTER',          '', 'Column letter for Owner/Founder name'],
+    ['OWNER_EMAIL_COL_LETTER',    '', 'Column letter for Owner email address'],
+    ['OWNER_LINKEDIN_COL_LETTER', '', 'Column letter for Owner LinkedIn URL'],
+    ['OUTPUT_COL_LETTER',         '', 'Column letter for output customization'],
+    ['FIND_OWNER_INFO_COL_LETTER','', 'Column letter to flag which rows to process'],
+    ['SEQUENCE_ID_COL_LETTER',    '', 'Column letter for Sequence ID'],
+    ['SENDER_ID_COL_LETTER',      '', 'Column letter for Sender ID']
+  ];
 
-  // 2️⃣ Prompt for each column letter (saved to the 999-config sheet)
-  const prompts = [
-      { letterKey: 'COMPANY_COL_LETTER',                   text: 'Column letter for Company name:' },
-      { letterKey: 'WEBSITE_COL_LETTER',                   text: 'Column letter for Website URL:' },
-      { letterKey: 'CUSTOM_INDUSTRY_COL_LETTER',           text: 'Column letter for Industry:' },
-      { letterKey: 'OWNER_COL_LETTER',                     text: 'Column letter for Owner/Founder name:' },
-      { letterKey: 'OWNER_EMAIL_COL_LETTER',               text: 'Column letter for Owner email address:' },
-      { letterKey: 'OWNER_LINKEDIN_COL_LETTER',            text: 'Column letter for Owner LinkedIn URL:' },
-      { letterKey: 'OUTPUT_COL_LETTER',                    text: 'Column letter for output customization:' },
-      { letterKey: 'FIND_OWNER_INFO_COL_LETTER',           text: 'Column letter to flag which rows to process:' },
-      { letterKey: 'SEQUENCE_ID_COL_LETTER',               text: 'Column letter for Sequence ID:' },
-      { letterKey: 'SENDER_ID_COL_LETTER',                 text: 'Column letter for Sender ID:' }
-    ];
+  sheet.getRange(2, 1, rows.length, 3).setValues(rows);
+  sheet.getRange(2, 3, rows.length, 1).setFontStyle('italic');
 
-  prompts.forEach(item => {
-    const resp = ui.prompt(
-      'Data Sheet & Column Setup',
-      item.text,
-      ui.ButtonSet.OK_CANCEL
-    );
-    if (resp.getSelectedButton() === ui.Button.OK) {
-      const letter = resp.getResponseText().trim().toUpperCase();
-      writeConfig(item.letterKey, letter);
-    }
-  });
-  refreshLookups();
-  applyLookupDropdowns();
-  ui.alert(`✔ Saved sheet name (“${sheetName}”), column configuration, and lookup‑dropdowns.`);
+  ui.alert('✔ 999-config sheet initialized. Please fill in the values and rerun the setup when done.');
 }
 
 /**
