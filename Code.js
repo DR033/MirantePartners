@@ -2,9 +2,49 @@
  * Mirante Partners Toolkit - v1.3 - 07.17.2025
  */
 
+// ---------------------------------------------------------------------------
+// Configuration handling using a dedicated sheet "999-config"
+// ---------------------------------------------------------------------------
+
+function getConfigSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return ss.getSheetByName('999-config');
+}
+
+function ensureConfigSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('999-config');
+  if (!sheet) {
+    sheet = ss.insertSheet('999-config');
+    sheet.getRange(1, 1, 1, 2).setValues([['Key', 'Value']]);
+  }
+  return sheet;
+}
+
+function readConfig(key) {
+  const sheet = getConfigSheet();
+  if (!sheet) return '';
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === key) return data[i][1];
+  }
+  return '';
+}
+
+function writeConfig(key, value) {
+  const sheet = ensureConfigSheet();
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === key) {
+      sheet.getRange(i + 1, 2).setValue(value);
+      return;
+    }
+  }
+  sheet.appendRow([key, value]);
+}
+
 function getColumnConfig(propName) {
-  const docProps = PropertiesService.getDocumentProperties();
-  const value = docProps.getProperty(propName);
+  const value = readConfig(propName);
   if (!value) {
     SpreadsheetApp.getUi().alert(`Configuration Error! The column for "${propName}" has not been set for this sheet. Please ask an administrator to configure it.`);
     throw new Error(`Missing configuration for ${propName}`);
@@ -33,8 +73,7 @@ function letterToColumn(letter) {
  * Retrieve a script property value. Throws if not set.
  */
 function getConfig(name) {
-  const docProps = PropertiesService.getDocumentProperties();
-  const val = docProps.getProperty(name);
+  const val = readConfig(name);
   if (!val) {
     SpreadsheetApp.getUi().alert(
       `Configuration Error!\n` +
@@ -202,12 +241,11 @@ const ADMIN_USERS = [
 
 function onOpen(e) {
   const ui = SpreadsheetApp.getUi();
-  const docProps = PropertiesService.getDocumentProperties();
   const userEmail = Session.getActiveUser().getEmail();
 
   // Warn if not configured by checking for essential properties.
-  const sheetName = docProps.getProperty('SHEET_NAME');
-  const companyCol = docProps.getProperty('COMPANY_COL_LETTER');
+  const sheetName = readConfig('SHEET_NAME');
+  const companyCol = readConfig('COMPANY_COL_LETTER');
   if (!sheetName || !companyCol) {
     ui.alert(
       'Toolkit not configured yet!',
@@ -245,14 +283,16 @@ function onOpen(e) {
 
 /**
  * Prompt the administrator to configure column letters for this sheet.
- * Saved in this document’s properties so each sheet retains its own setup.
+ * Saved in the 999-config sheet so each spreadsheet retains its own setup.
  */
 function setupColumnsForThisSheet() {
   requireAdmin();  // Only administrators can run this setup
 
   const ui          = SpreadsheetApp.getUi();
   const scriptProps = PropertiesService.getScriptProperties();
-  const docProps    = PropertiesService.getDocumentProperties();
+
+  // Ensure config sheet exists
+  ensureConfigSheet();
 
   // 1️⃣ Prompt for the data‐sheet name (saved to Script Properties)
   const sheetResp = ui.prompt(
@@ -269,9 +309,9 @@ function setupColumnsForThisSheet() {
     ui.alert('No sheet name entered – setup cancelled.');
     return;
   }
-  docProps.setProperty('SHEET_NAME', sheetName);
+  writeConfig('SHEET_NAME', sheetName);
 
-  // 2️⃣ Prompt for each column letter (saved to Document Properties)
+  // 2️⃣ Prompt for each column letter (saved to the 999-config sheet)
   const prompts = [
       { letterKey: 'COMPANY_COL_LETTER',                   text: 'Column letter for Company name:' },
       { letterKey: 'WEBSITE_COL_LETTER',                   text: 'Column letter for Website URL:' },
@@ -293,7 +333,7 @@ function setupColumnsForThisSheet() {
     );
     if (resp.getSelectedButton() === ui.Button.OK) {
       const letter = resp.getResponseText().trim().toUpperCase();
-      docProps.setProperty(item.letterKey, letter);
+      writeConfig(item.letterKey, letter);
     }
   });
   refreshLookups();
@@ -1315,17 +1355,16 @@ function requireAdmin() {
  * and Sender‑ID cells by pointing to the active sheet’s lookup ranges.
  */
 function applyLookupDropdowns() {
-  const ss       = SpreadsheetApp.getActiveSpreadsheet();
-  const docProps = PropertiesService.getDocumentProperties();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   // 1. Identify your data sheet & columns
-  const dataSheetName = docProps.getProperty('SHEET_NAME');
-  if (!dataSheetName) throw new Error('SHEET_NAME not set in Document Properties');
-  const dataSheet     = ss.getSheetByName(dataSheetName);
-  if (!dataSheet)    throw new Error(`Sheet "${dataSheetName}" not found`);
+  const dataSheetName = getConfig('SHEET_NAME');
+  if (!dataSheetName) throw new Error('SHEET_NAME not configured');
+  const dataSheet = ss.getSheetByName(dataSheetName);
+  if (!dataSheet) throw new Error(`Sheet "${dataSheetName}" not found`);
 
-  const seqCol    = letterToColumn(docProps.getProperty('SEQUENCE_ID_COL_LETTER'));
-  const senderCol = letterToColumn(docProps.getProperty('SENDER_ID_COL_LETTER'));
+  const seqCol = letterToColumn(getColumnConfig('SEQUENCE_ID_COL_LETTER'));
+  const senderCol = letterToColumn(getColumnConfig('SENDER_ID_COL_LETTER'));
 
   // 2. Get the lookup sheets in this spreadsheet
   const seqLookup    = ss.getSheetByName('Sequences_Lookup');
