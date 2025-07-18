@@ -276,6 +276,7 @@ function onOpen(e) {
         .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
         .addSeparator()
         .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
+        .addItem('📊 Sync Credits from DB',        'downloadCredits')
       );
   }
 
@@ -332,7 +333,12 @@ function setupApiKey() {
     'BRIGHTDATA_API_KEY',
     'BRIGHTDATA_DATASET_ID',
     'BRIGHTDATA_UNLOCKER_ZONE',
-    'BRIGHTDATA_SERP_ZONE'
+    'BRIGHTDATA_SERP_ZONE',
+    'MYSQL_HOST',
+    'MYSQL_PORT',
+    'MYSQL_USER',
+    'MYSQL_PASS',
+    'MYSQL_DB'
   ];
 
   apiKeys.forEach(name => {
@@ -346,7 +352,36 @@ function setupApiKey() {
     }
   });
 
-  ui.alert('API keys saved to Script Properties');
+  ui.alert('Settings saved to Script Properties');
+}
+
+function downloadCredits() {
+  requireAdmin();
+  ensureActivityTable();
+  const conn = getDbConnection();
+  const sql = 'SELECT email, action, SUM(row_count) AS total_rows FROM user_activity GROUP BY email, action';
+  const stmt = conn.createStatement();
+  const rs = stmt.executeQuery(sql);
+  const data = [];
+  while (rs.next()) {
+    data.push([rs.getString('email'), rs.getString('action'), rs.getInt('total_rows')]);
+  }
+  rs.close();
+  stmt.close();
+  conn.close();
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Credits');
+  if (!sheet) {
+    sheet = ss.insertSheet('Credits');
+  } else {
+    sheet.clear();
+  }
+  sheet.getRange(1,1,1,3).setValues([[ 'User Email', 'Action', 'Total Rows' ]]);
+  if (data.length) {
+    sheet.getRange(2,1,data.length,3).setValues(data);
+  }
+  SpreadsheetApp.getUi().alert('Credits sheet updated from database.');
 }
 
 /**
@@ -1324,6 +1359,52 @@ function requireAdmin() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// MySQL Helpers
+// ---------------------------------------------------------------------------
+
+function getDbConnection() {
+  const host = getApiKey('MYSQL_HOST');
+  const port = getApiKey('MYSQL_PORT');
+  const user = getApiKey('MYSQL_USER');
+  const pass = getApiKey('MYSQL_PASS');
+  const db   = getApiKey('MYSQL_DB');
+  const url  = `jdbc:mysql://${host}:${port}/${db}`;
+  return Jdbc.getConnection(url, user, pass);
+}
+
+function ensureActivityTable() {
+  const conn = getDbConnection();
+  const stmt = conn.createStatement();
+  stmt.execute(`CREATE TABLE IF NOT EXISTS user_activity (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(255),
+    action VARCHAR(255),
+    row_count INT,
+    ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  )`);
+  stmt.close();
+  conn.close();
+}
+
+function logUserActivity(userEmail, action, count) {
+  try {
+    ensureActivityTable();
+    const conn = getDbConnection();
+    const stmt = conn.prepareStatement(
+      'INSERT INTO user_activity (email, action, row_count, ts) VALUES (?, ?, ?, NOW())'
+    );
+    stmt.setString(1, userEmail);
+    stmt.setString(2, action);
+    stmt.setInt(3, count);
+    stmt.execute();
+    stmt.close();
+    conn.close();
+  } catch (e) {
+    console.error('Failed to log user activity:', e);
+  }
+}
+
 /**
  * After column‑setup, apply data‑validation dropdowns to any blank
  * Sequence & Sender cells, using the *external* lookup spreadsheet.
@@ -1651,6 +1732,8 @@ function enrichData() {
     const duration = Math.round((new Date() - startTime) / 1000);
     console.log(`✅🎉 Enrichment process completed successfully in ${duration} seconds!`);
     SpreadsheetApp.getUi().alert(`Success!`, `Enriched ${flaggedRows.length} rows.`, SpreadsheetApp.getUi().ButtonSet.OK);
+    const user = Session.getActiveUser().getEmail();
+    logUserActivity(user, 'data_enrichment', flaggedRows.length);
 
   } catch (e) {
     console.error(`A critical error occurred during the enrichment process: ${e.toString()}`, e.stack);
@@ -1836,6 +1919,8 @@ function createFullEmail() {
     `• Emails created: ${emailsCreated}`,
     ui.ButtonSet.OK
   );
+  const user = Session.getActiveUser().getEmail();
+  logUserActivity(user, 'email_customization', flaggedRows.length);
 }
 
 /**
@@ -1927,6 +2012,8 @@ function runCombinedScrapesOptimized() {
     `• Customizations created: ${customCount}`,
     ui.ButtonSet.OK
   );
+  const user = Session.getActiveUser().getEmail();
+  logUserActivity(user, 'email_customization', flaggedRows.length);
 }
 
 /**
