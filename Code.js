@@ -2402,7 +2402,7 @@ function runCombinedScrapesOptimized() {
  */
 function ScrapeOwnerLinkedInOptimized(flaggedRows) {
   console.log('Starting LinkedIn scraping (in-memory)...');
-  // const outputCol = letterToColumn(getColumnConfig('OWNER_LINKEDIN_SCRAPE_COL_LETTER')); // <<< THIS LINE WAS REMOVED
+  // const outputCol = letterToColumn(getColumnConfig('OWNER_LINKEDIN_SCRAPE_COL_LETTER')); // removed in optimized version
   const inputCol = letterToColumn(getColumnConfig('OWNER_LINKEDIN_COL_LETTER'));
   const apiKey = getApiKey('BRIGHTDATA_API_KEY');
   const datasetId = getApiKey('BRIGHTDATA_DATASET_ID');
