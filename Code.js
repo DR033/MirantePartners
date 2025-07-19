@@ -57,6 +57,9 @@ function getColumnConfig(propName) {
 const MODEL = 'claude-sonnet-4-20250514';
 const TEMPERATURE = 0.4;
 const MAX_TOKENS = 350;
+const EMAIL_PROMPT_ROW = 13;
+const DEFAULT_GUIDELINES_ROW = 14;
+const LAST_EMAIL_ROW = 15;
 
 // Default text for the email writing guidelines section of the system prompt
 const DEFAULT_EMAIL_GUIDELINES = `Context & Purpose
@@ -281,6 +284,7 @@ function onOpen(e) {
         .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
         .addSeparator()
         .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
+        .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
       );
   }
 
@@ -320,6 +324,11 @@ function setupColumnsForThisSheet() {
   sheet.getRange(2, 1, rows.length, 3).setValues(rows);
   sheet.getRange(2, 1, rows.length, 1).setFontStyle('italic');
   sheet.hideColumns(3);
+
+  // Store the default guidelines one row below for reference
+  const defaultRow = rows.length + 2; // starting row 2 plus length
+  sheet.getRange(defaultRow, 1, 1, 2)
+       .setValues([['Default Email Guidelines', DEFAULT_EMAIL_GUIDELINES]]);
 
   ui.alert('✔ 999-config sheet initialized. Please fill in the values and rerun the setup when done.');
 }
@@ -1850,6 +1859,86 @@ function createFullEmail() {
 }
 
 /**
+ * Prompt the admin for feedback to change the email optimization style.
+ * Saves Claude's suggested prompt to row EMAIL_PROMPT_ROW of 999-config.
+ */
+function changeEmailOptimizationStyle() {
+  requireAdmin();
+  const ui = SpreadsheetApp.getUi();
+  const cfg = ensureConfigSheet();
+
+  const resp = ui.prompt(
+    'Change Email Optimization Style',
+    'Enter your feedback for improving the email customization:',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  const feedback = resp.getResponseText().trim();
+  if (!feedback) {
+    ui.alert('No feedback entered.');
+    return;
+  }
+
+  let guidelines = cfg.getRange(DEFAULT_GUIDELINES_ROW, 2).getValue();
+  if (!guidelines) {
+    guidelines = DEFAULT_EMAIL_GUIDELINES;
+    cfg.getRange(DEFAULT_GUIDELINES_ROW, 1, 1, 2)
+       .setValues([['Default Email Guidelines', guidelines]]);
+  }
+
+  const lastEmail = cfg.getRange(LAST_EMAIL_ROW, 2).getValue();
+
+  const instruction =
+    'Rewrite the email customization prompt based on the user feedback. ' +
+    'Use the original guidelines and the previous email text as context if provided. ' +
+    'IMPORTANT: Respond ONLY with the text of the new prompt and nothing else.';
+
+  const parts = [
+    instruction,
+    'ORIGINAL_EMAIL_GUIDELINES:\n' + guidelines,
+  ];
+  if (lastEmail) parts.push('LATEST_EMAIL_CUSTOMIZATION:\n' + lastEmail);
+  parts.push('USER_FEEDBACK:\n' + feedback);
+
+  const prompt = parts.join('\n\n');
+
+  const apiResp = rateLimitedAnthropicFetch(
+    'https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        'x-api-key': getApiKey('ANTHROPIC_API_KEY'),
+        'anthropic-version': '2023-06-01'
+      },
+      payload: JSON.stringify({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        temperature: TEMPERATURE,
+        system: '',
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (apiResp.getResponseCode() !== 200) {
+    ui.alert('Claude error: ' + apiResp.getContentText());
+    return;
+  }
+
+  let newPrompt;
+  try {
+    newPrompt = JSON.parse(apiResp.getContentText()).content[0].text.trim();
+  } catch (e) {
+    ui.alert('Failed to parse Claude response');
+    return;
+  }
+
+  cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(newPrompt);
+  ui.alert('Email optimization prompt updated on row ' + EMAIL_PROMPT_ROW + '.');
+}
+
+/**
  * MODIFIED - Orchestrates the entire scrape-and-customize process in memory.
  * Scrapes LinkedIn and webpages, passes the data directly to the AI,
  * and writes only the final customization to the sheet.
@@ -2204,6 +2293,14 @@ function runCustomization(rowNum, sheet, baseRowData, scrapedTexts) {
     .setValue(text)
     .setFontColor('red')
     .setFontStyle('italic');
+
+  // Store this customization for reference
+  try {
+    const cfg = ensureConfigSheet();
+    cfg.getRange(LAST_EMAIL_ROW, 2).setValue(text);
+  } catch (e) {
+    console.error('Failed to save latest email text:', e);
+  }
 
   Utilities.sleep(2000); // Respect rate limits
   return 1;
