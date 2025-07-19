@@ -60,6 +60,9 @@ const MAX_TOKENS = 350;
 const EMAIL_PROMPT_ROW = 13;       // current prompt used by Claude
 const PREVIOUS_PROMPT_ROW = 14;    // stores the previous customization style
 const LAST_EMAIL_ROW = 15;
+const INFO_PROMPT_ROW = 16;        // active custom info guidelines
+const PREVIOUS_INFO_ROW = 17;      // previous custom info prompt
+const LAST_INFO_ROW = 18;
 
 // Default text for the email writing guidelines section of the system prompt
 const DEFAULT_EMAIL_GUIDELINES = `Context & Purpose
@@ -124,6 +127,39 @@ const DEFAULT_EMAIL_GUIDELINES = `Context & Purpose
   - Does it sound like genuine interest, not aggressive pursuit?
   - Is the specific detail meaningful, not just factual?`;
 
+const DEFAULT_CUSTOM_INFO_GUIDELINES = `Context & Purpose
+You are generating personalized observations for business outreach emails. These observations demonstrate research and create connection points while maintaining professional authenticity. The goal is to sound like a knowledgeable professional who has genuinely researched the recipient, not someone trying to impress with industry expertise.
+
+Length & Structure
+Aim for ~250 characters (1–2 brief sentences). Always start with "By the way" or "As an aside".
+
+Content Guidelines
+- Make a brief, intelligent observation about: Their background or career moves; Company situation or recent developments; Industry context (surface-level only)
+- Show you've done research without being overly detailed
+- Include moderate empathy and occasional opinion qualifiers: "I think that..."; "I believe that...", "Sounds like..."
+
+Tone
+- Conversational and direct – not overly pleasant or flattering
+- Sound like you're stating an interesting fact you noticed
+- Avoid trying to impress with deep industry knowledge
+- No technical rambling or extensive analysis
+- Professional but authentic
+
+Style Examples
+Example 1:
+"By the way, saw that you bought Precision Safe Sidewalks shortly after launching Blue Zone, and now you're on your second acquisition in the ADA space. Sounds like both ventures are thriving!"
+
+Example 2:
+"By the way, saw that you guys were very early adopters of Apple Newton while writing your own software for ems charting. I think it's a testament to you and Shawn's care for solving problems proactively and making life just a bit easier for our frontline responders!"
+
+Key Success Criteria
+- Demonstrates genuine research without being invasive
+- Creates natural conversation starter
+- Maintains professional boundaries
+- Shows authentic interest rather than sales manipulation
+- Balances knowledge with humility
+- ALWAYS addresses the recipient directly using "you/your" rather than their name in third person`;
+
 /**
  * Convert a column letter (e.g. "A", "AA") to its 1-based index.
  */
@@ -168,52 +204,21 @@ function normalizeDomain(url) {
 }
 
 function buildSystemPrompt() {
-  // CORREÇÃO: Usa a função getColumnConfig para ler as propriedades do DOCUMENTO.
-  // We still need the owner column for the prompt's instructions.
+  // Use getColumnConfig to dynamically insert the owner column letter.
   const ownerCol = getColumnConfig('OWNER_COL_LETTER');
- 
-  return `Context & Purpose
-You are generating personalized observations for business outreach emails. These observations demonstrate research and create connection points while maintaining professional authenticity. The goal is to sound like a knowledgeable professional who has genuinely researched the recipient, not someone trying to impress with industry expertise.
 
-Input Data Structure
-- Company Name
-- Homepage content (scraped)
-- About Us section (scraped)
-- Column ${ownerCol}: Recipient's name (use for context - address them directly as "you" in the observation)
-- Owner+Company combined text (scraped)
-- Scraped Owner LinkedIn profile text
-- Additional scraped page contents (up to 5 pages)
+  const dataSection = `Input Data Structure:
+  - Company Name
+  - Homepage content (scraped)
+  - About Us section (scraped)
+  - Column ${ownerCol}: Recipient's name (use for context - address them directly as "you" in the observation)
+  - Owner+Company combined text (scraped)
+  - Scraped Owner LinkedIn profile text
+  - Additional scraped page contents (up to 5 pages)`;
 
-Length & Structure
-Aim for ~250 characters (1–2 brief sentences). Always start with "By the way" or "As an aside".
+  const guidelines = readConfig('CUSTOM_INFO_GUIDELINES') || DEFAULT_CUSTOM_INFO_GUIDELINES;
 
-Content Guidelines
-- Make a brief, intelligent observation about: Their background or career moves; Company situation or recent developments; Industry context (surface-level only)
-- Show you've done research without being overly detailed
-- Include moderate empathy and occasional opinion qualifiers: "I think that..."; "I believe that...", "Sounds like..."
-
-Tone
-- Conversational and direct – not overly pleasant or flattering
-- Sound like you're stating an interesting fact you noticed
-- Avoid trying to impress with deep industry knowledge
-- No technical rambling or extensive analysis
-- Professional but authentic
-
-Style Examples
-Example 1:
-"By the way, saw that you bought Precision Safe Sidewalks shortly after launching Blue Zone, and now you're on your second acquisition in the ADA space. Sounds like both ventures are thriving!"
-
-Example 2:
-"By the way, saw that you guys were very early adopters of Apple Newton while writing your own software for ems charting. I think it's a testament to you and Shawn's care for solving problems proactively and making life just a bit easier for our frontline responders!"
-
-Key Success Criteria
-- Demonstrates genuine research without being invasive
-- Creates natural conversation starter
-- Maintains professional boundaries
-- Shows authentic interest rather than sales manipulation
-- Balances knowledge with humility
-- ALWAYS addresses the recipient directly using "you/your" rather than their name in third person
-`;
+  return `${dataSection}\n\n${guidelines}`;
 }
 
 function buildSystemPrompt2() {
@@ -268,7 +273,11 @@ function onOpen(e) {
     .addItem('⚙️ 0 - Setup Columns & Sheet Name', 'setupColumnsForThisSheet')
     // 🔍 Find…
     .addItem('🔍 1 - Enrich Data',       'enrichData')
-    .addItem('✨ 2 - Create Customization',  'runCombinedScrapesOptimized')
+    .addSubMenu(ui.createMenu('✨ 2 - Create Customization')
+      .addItem('✨ Create Customization', 'runCombinedScrapesOptimized')
+      .addItem('🪄 Change Custom Info Style', 'changeCustomInfoStyle')
+      .addItem('↩️ Revert to previous custom info', 'revertToPreviousInfoStyle')
+      .addItem('🔄 Revert to default custom info', 'revertToDefaultInfoStyle'))
 
     // 🚀 Upload to Apollo
     .addSubMenu(ui.createMenu('🚀 3 - Upload to Apollo')
@@ -277,17 +286,17 @@ function onOpen(e) {
     );
   // Only add “Admin Setup” if the user is in your ADMIN_USERS list
   if (ADMIN_USERS.indexOf(userEmail) !== -1) {
-    menu
-      .addSubMenu(ui.createMenu('✉️ Create Full Email - beta')
-        .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
-        .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
-        .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
-        .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
-      .addSeparator()
-      .addSubMenu(ui.createMenu('👑 Admin Setup')
-        .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
+      menu
+        .addSubMenu(ui.createMenu('✉️ Create Full Email - beta')
+          .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
+          .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
+          .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
+          .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
         .addSeparator()
-      );
+        .addSubMenu(ui.createMenu('👑 Admin Setup')
+          .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
+          .addSeparator()
+        );
   }
 
   menu.addToUi();
@@ -334,6 +343,15 @@ function setupColumnsForThisSheet() {
   sheet.getRange(prevRow + 1, 1, 1, 2)
        .setValues([['Last Email Customization', '']]);
   sheet.getRange(prevRow, 1, 2, 1).setFontStyle('italic');
+
+  const infoRow = prevRow + 2;
+  sheet.getRange(infoRow, 1, 1, 3)
+       .setValues([['Email (custom_info paragraph) writing guidelines', DEFAULT_CUSTOM_INFO_GUIDELINES, 'CUSTOM_INFO_GUIDELINES']]);
+  sheet.getRange(infoRow + 1, 1, 1, 2)
+       .setValues([['Previous custom_info Prompt', '']]);
+  sheet.getRange(infoRow + 2, 1, 1, 2)
+       .setValues([['Last Email Customization (custom_info paragraph)', '']]);
+  sheet.getRange(infoRow, 1, 3, 1).setFontStyle('italic');
 
   ui.alert('✔ 999-config sheet initialized. Please fill in the values and rerun the setup when done.');
 }
@@ -1970,6 +1988,103 @@ function revertToDefaultCustomization() {
   SpreadsheetApp.getUi().alert('Reverted to default email customization.');
 }
 
+function changeCustomInfoStyle() {
+  requireAdmin();
+  const ui = SpreadsheetApp.getUi();
+  const cfg = ensureConfigSheet();
+
+  const resp = ui.prompt(
+    'Change Custom Info Style',
+    'Enter your feedback for improving the custom info paragraph:',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  const feedback = resp.getResponseText().trim();
+  if (!feedback) {
+    ui.alert('No feedback entered.');
+    return;
+  }
+
+  let guidelines = DEFAULT_CUSTOM_INFO_GUIDELINES;
+
+  const lastInfo = cfg.getRange(LAST_INFO_ROW, 2).getValue();
+
+  const instruction =
+    'Rewrite the custom info prompt based on the user feedback. ' +
+    'Use the original guidelines and the previous paragraph as context if provided. ' +
+    'IMPORTANT: Respond ONLY with the text of the new prompt and nothing else.';
+
+  const parts = [
+    instruction,
+    'ORIGINAL_CUSTOM_INFO_GUIDELINES:\n' + guidelines,
+  ];
+  if (lastInfo) parts.push('LATEST_CUSTOM_INFO:\n' + lastInfo);
+  parts.push('USER_FEEDBACK:\n' + feedback);
+
+  const prompt = parts.join('\n\n');
+
+  const apiResp = rateLimitedAnthropicFetch(
+    'https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        'x-api-key': getApiKey('ANTHROPIC_API_KEY'),
+        'anthropic-version': '2023-06-01'
+      },
+      payload: JSON.stringify({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        temperature: TEMPERATURE,
+        system: '',
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (apiResp.getResponseCode() !== 200) {
+    ui.alert('Claude error: ' + apiResp.getContentText());
+    return;
+  }
+
+  let newPrompt;
+  try {
+    newPrompt = JSON.parse(apiResp.getContentText()).content[0].text.trim();
+  } catch (e) {
+    ui.alert('Failed to parse Claude response');
+    return;
+  }
+
+  const currentPrompt = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
+  if (currentPrompt) {
+    cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(currentPrompt);
+  }
+  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(newPrompt);
+  ui.alert('Custom info prompt updated.');
+}
+
+function revertToPreviousInfoStyle() {
+  const ui = SpreadsheetApp.getUi();
+  const cfg = ensureConfigSheet();
+  const prev = cfg.getRange(PREVIOUS_INFO_ROW, 2).getValue();
+  if (!prev) {
+    ui.alert('No previous custom info style found.');
+    return;
+  }
+  const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
+  cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
+  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(prev);
+  ui.alert('Reverted to previous custom info style.');
+}
+
+function revertToDefaultInfoStyle() {
+  const cfg = ensureConfigSheet();
+  const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
+  cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
+  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(DEFAULT_CUSTOM_INFO_GUIDELINES);
+  SpreadsheetApp.getUi().alert('Reverted to default custom info style.');
+}
+
 /**
  * MODIFIED - Orchestrates the entire scrape-and-customize process in memory.
  * Scrapes LinkedIn and webpages, passes the data directly to the AI,
@@ -2329,7 +2444,7 @@ function runCustomization(rowNum, sheet, baseRowData, scrapedTexts) {
   // Store this customization for reference
   try {
     const cfg = ensureConfigSheet();
-    cfg.getRange(LAST_EMAIL_ROW, 2).setValue(text);
+    cfg.getRange(LAST_INFO_ROW, 2).setValue(text);
   } catch (e) {
     console.error('Failed to save latest email text:', e);
   }
