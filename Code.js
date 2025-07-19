@@ -1389,7 +1389,7 @@ function getMXDomain(email) {
       
       if (domainSet.size > 0) {
         return Array.from(domainSet).join(", ");
-      } else {
+      } else {https://github.com/DR033/MirantePartners/pull/25/conflict?name=Code.js&ancestor_oid=b9fccc6b33fb385e4b06ffb616d39ff897438fa8&base_oid=820045bf317e41bbb97efd656c1ad9bfc2db0c53&head_oid=628122685ff6bd85e23f6f3291c24f503bdc3a45
         return "No MX domain part found";
       }
     } else {
