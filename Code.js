@@ -1738,6 +1738,13 @@ function enrichData() {
     console.error(`A critical error occurred during the enrichment process: ${e.toString()}`, e.stack);
     SpreadsheetApp.getUi().alert('An unexpected error occurred. Please check the logs for details.');
   }
+  
+  // Catch any unexpected errors from the outer try block
+} catch (e) {
+  console.error('Unexpected failure in enrichData:', e);
+  SpreadsheetApp.getUi().alert('An unexpected error occurred. Please check the logs for details.');
+}
+
 }
 
 /**
@@ -1942,11 +1949,7 @@ function createFullEmail() {
     `• Emails created: ${emailsCreated}`,
     ui.ButtonSet.OK
   );
-    logAction(fn, 'Completed');
-  } catch (e) {
-    logAction(fn, 'Failed: ' + e.message);
-    throw e;
-  }
+  logAction(fn, 'Completed');
 }
 
 /**
