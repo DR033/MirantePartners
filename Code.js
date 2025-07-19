@@ -1722,6 +1722,11 @@ function rateLimitedAnthropicFetch(url, options) {
 function createFullEmail() {
   const ui = SpreadsheetApp.getUi();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
+  if (!sheet) {
+    console.error(`Sheet with name "${getConfig('SHEET_NAME')}" not found.`);
+    ui.alert(`Error: Sheet "${getConfig('SHEET_NAME')}" not found.`);
+    return;
+  }
   const flagCol = letterToColumn(getColumnConfig('FIND_OWNER_INFO_COL_LETTER'));
   const outputCol = letterToColumn(getColumnConfig('OUTPUT_COL_LETTER'));
   const data = sheet.getDataRange().getValues();
