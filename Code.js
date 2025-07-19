@@ -67,6 +67,63 @@ const INFO_PROMPT_ROW = 16;        // active custom info guidelines
 const PREVIOUS_INFO_ROW = 17;      // previous custom info prompt
 const LAST_INFO_ROW = 18;
 
+// ---------------------------------------------------------------------------
+// Basic logging utilities
+// ---------------------------------------------------------------------------
+const SCRIPT_VERSION = '1.4';
+const LOG_HEADERS = ['Timestamp','Execution ID','Script Version','Rows','User Email','Trigger','Sheet Name','Function Name','Status','Duration (s)','Input Data','Number of rows enriched','Apollo-API Calls','OpenAI-API Calls','Anthropic-API Calls'];
+
+function getLogSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('logs');
+  if (!sheet) {
+    sheet = ss.insertSheet('logs');
+    sheet.getRange(1, 1, 1, LOG_HEADERS.length).setValues([LOG_HEADERS]);
+  }
+  return sheet;
+}
+
+function logEvent(data) {
+  try {
+    const sheet = getLogSheet();
+    const row = LOG_HEADERS.map(h => data[h] !== undefined ? data[h] : '');
+    sheet.appendRow(row);
+  } catch (e) {
+    console.error('Failed to write log entry:', e);
+  }
+}
+
+function startLog(functionName) {
+  return {
+    functionName,
+    id: Utilities.getUuid(),
+    start: new Date(),
+    user: Session.getActiveUser().getEmail(),
+    sheet: getConfig('SHEET_NAME')
+  };
+}
+
+function endLog(info, status, extras) {
+  extras = extras || {};
+  logEvent({
+    'Timestamp': info.start,
+    'Execution ID': info.id,
+    'Script Version': SCRIPT_VERSION,
+    'Rows': extras.rows || '',
+    'User Email': info.user,
+    'Trigger': extras.trigger || 'Manual',
+    'Sheet Name': info.sheet,
+    'Function Name': info.functionName,
+    'Status': status,
+    'Duration (s)': Math.round((new Date() - info.start) / 1000),
+    'Input Data': extras.input || '',
+    'Number of rows enriched': extras.rowsEnriched || '',
+    'Apollo-API Calls': extras.apolloCalls || '',
+    'OpenAI-API Calls': extras.openaiCalls || '',
+    'Anthropic-API Calls': extras.anthropicCalls || ''
+  });
+}
+
 // Default text for the email writing guidelines section of the system prompt
 const DEFAULT_EMAIL_GUIDELINES = `Context & Purpose
   You are Diego Rosário from Mirante Partners, an M&A investor writing a personalized cold outreach email to the owner of a private company.
@@ -309,7 +366,9 @@ function onOpen(e) {
  * Saved in the // Config sheet so each spreadsheet retains its own setup.
  */
 function setupColumnsForThisSheet() {
-  requireAdmin();
+  const __log = startLog('setupColumnsForThisSheet');
+  try {
+    requireAdmin();
 
   const ui    = SpreadsheetApp.getUi();
   const sheet = ensureConfigSheet();
@@ -355,14 +414,21 @@ function setupColumnsForThisSheet() {
        .setValues([['Last Email Customization (custom_info paragraph)', '']]);
   sheet.getRange(infoRow, 1, 3, 1).setFontStyle('italic');
 
-  ui.alert('✔ // Config sheet created. Please fill in the values before running any function.');
+    ui.alert('✔ // Config sheet created. Please fill in the values before running any function.');
+    endLog(__log, 'SUCCESS');
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message);
+    throw err;
+  }
 }
 
 /**
  * Prompt for API keys (Anthropic, Apollo, OpenAI and BrightData).
  */
 function setupApiKey() {
-  requireAdmin();
+  const __log = startLog('setupApiKey');
+  try {
+    requireAdmin();
   const ui = SpreadsheetApp.getUi();
   const scriptProps = PropertiesService.getScriptProperties();
   const apiKeys = [
@@ -386,7 +452,12 @@ function setupApiKey() {
     }
   });
 
-  ui.alert('API keys saved to Script Properties');
+    ui.alert('API keys saved to Script Properties');
+    endLog(__log, 'SUCCESS');
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message);
+    throw err;
+  }
 }
 
 /**
@@ -995,10 +1066,13 @@ function refreshSequences() {
  *   ⑤ Enrol the contact in the chosen sequence
  */
 function uploadContacts() {
-  // --- As configurações globais e da planilha continuam iguais ---
-  const activeSS = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet    = activeSS.getSheetByName(getConfig('SHEET_NAME'));
-  const apolloKey = getApiKey('APOLLO_API_KEY');
+  const __log = startLog('uploadContacts');
+  let processed = 0;
+  try {
+    // --- As configurações globais e da planilha continuam iguais ---
+    const activeSS = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet    = activeSS.getSheetByName(getConfig('SHEET_NAME'));
+    const apolloKey = getApiKey('APOLLO_API_KEY');
 
   // --- CORREÇÃO: Buscando TODAS as colunas do jeito novo ---
   const flagCol = letterToColumn(getColumnConfig('FIND_OWNER_INFO_COL_LETTER'));
@@ -1019,8 +1093,7 @@ function uploadContacts() {
 const seqMap    = buildLookupMap(activeSS, 'Sequences_Lookup');
 const senderMap = buildLookupMap(activeSS, 'Senders_Lookup');
 
-  const rows = sheet.getDataRange().getValues();
-  let processed = 0;
+    const rows = sheet.getDataRange().getValues();
 
   rows.slice(1).forEach((row, idx) => {
     const sheetRow = idx + 2;
@@ -1111,7 +1184,12 @@ const senderMap = buildLookupMap(activeSS, 'Senders_Lookup');
     Utilities.sleep(1000);
   });
 
-  SpreadsheetApp.getUi().alert(`Uploaded ${processed} contacts to Apollo.`);
+    SpreadsheetApp.getUi().alert(`Uploaded ${processed} contacts to Apollo.`);
+    endLog(__log, 'SUCCESS', {rowsEnriched: processed});
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message, {rowsEnriched: processed});
+    throw err;
+  }
 }
 
 /**
@@ -1341,9 +1419,16 @@ function getMXDomain(email) {
 }
 
 function refreshLookups() {
-   refreshSenders();
-   refreshSequences();
-   applyLookupDropdowns();
+  const __log = startLog('refreshLookups');
+  try {
+    refreshSenders();
+    refreshSequences();
+    applyLookupDropdowns();
+    endLog(__log, 'SUCCESS');
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message);
+    throw err;
+  }
 }
 
 function getApiKey(keyName) {
@@ -1475,8 +1560,11 @@ function findFirstLinkedInResult(ownerName, companyName) {
  * defined elsewhere in your Apps Script project.
  */
 function enrichData() {
-  console.log('🚀 Starting the main enrichment process (Optimized)...');
-  const startTime = new Date();
+  const __log = startLog('enrichData');
+  let rowsInfo = '';
+  try {
+    console.log('🚀 Starting the main enrichment process (Optimized)...');
+    const startTime = new Date();
 
   // --- General Setup ---
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
@@ -1509,6 +1597,7 @@ function enrichData() {
       });
     }
   }
+  rowsInfo = flaggedRows.map(r => r.rowNum).join(',');
 
   if (flaggedRows.length === 0) {
     SpreadsheetApp.getUi().alert('No rows were flagged with "1" to process.');
@@ -1689,14 +1778,16 @@ function enrichData() {
     console.log('✅ All updates applied.');
 
     const duration = Math.round((new Date() - startTime) / 1000);
-    console.log(`✅🎉 Enrichment process completed successfully in ${duration} seconds!`);
-    SpreadsheetApp.getUi().alert(`Success!`, `Enriched ${flaggedRows.length} rows.`, SpreadsheetApp.getUi().ButtonSet.OK);
+      console.log(`✅🎉 Enrichment process completed successfully in ${duration} seconds!`);
+      SpreadsheetApp.getUi().alert(`Success!`, `Enriched ${flaggedRows.length} rows.`, SpreadsheetApp.getUi().ButtonSet.OK);
+      endLog(__log, 'SUCCESS', {rows: rowsInfo, rowsEnriched: flaggedRows.length});
 
-  } catch (e) {
-    console.error(`A critical error occurred during the enrichment process: ${e.toString()}`, e.stack);
-    SpreadsheetApp.getUi().alert('An unexpected error occurred. Please check the logs for details.');
+    } catch (e) {
+      console.error(`A critical error occurred during the enrichment process: ${e.toString()}`, e.stack);
+      SpreadsheetApp.getUi().alert('An unexpected error occurred. Please check the logs for details.');
+      endLog(__log, 'ERROR: ' + e.message, {rows: rowsInfo});
+    }
   }
-}
 
 /**
  * Fetch from Anthropic with a 30‑calls/minute shared rate limit.
@@ -1754,8 +1845,11 @@ function rateLimitedAnthropicFetch(url, options) {
  * NEW - Orchestrates a bulk, in-memory scrape and generates a full email for each flagged row.
  */
 function createFullEmail() {
-  const ui = SpreadsheetApp.getUi();
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
+  const __log = startLog('createFullEmail');
+  let rowsInfo = '';
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
   if (!sheet) {
     console.error(`Sheet with name "${getConfig('SHEET_NAME')}" not found.`);
     ui.alert(`Error: Sheet "${getConfig('SHEET_NAME')}" not found.`);
@@ -1767,8 +1861,9 @@ function createFullEmail() {
   const startTime = new Date();
 
   // Find all rows flagged with "1"
-  const flaggedRows = data.map((row, index) => ({ row, index }))
-                         .filter(item => item.row[flagCol - 1] === 1);
+    const flaggedRows = data.map((row, index) => ({ row, index }))
+                           .filter(item => item.row[flagCol - 1] === 1);
+    rowsInfo = flaggedRows.map(r => r.index + 1).join(',');
 
   if (flaggedRows.length === 0) {
     ui.alert('🛑 No rows flagged with "1" to process.');
@@ -1894,12 +1989,17 @@ function createFullEmail() {
   const duration = Math.round((Date.now() - startTime) / 1000);
   SpreadsheetApp.flush(); // Ensure UI is updated before showing the alert
 
-  ui.alert(
-    'Process Complete!',
-    `Processed ${flaggedRows.length} rows.\n\n` +
-    `• Emails created: ${emailsCreated}`,
-    ui.ButtonSet.OK
-  );
+    ui.alert(
+      'Process Complete!',
+      `Processed ${flaggedRows.length} rows.\n\n` +
+      `• Emails created: ${emailsCreated}`,
+      ui.ButtonSet.OK
+    );
+    endLog(__log, 'SUCCESS', {rows: rowsInfo, rowsEnriched: emailsCreated});
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message, {rows: rowsInfo});
+    throw err;
+  }
 }
 
 /**
@@ -1907,9 +2007,11 @@ function createFullEmail() {
  * Saves Claude's suggested prompt to row EMAIL_PROMPT_ROW of // Config.
  */
 function changeEmailOptimizationStyle() {
-  requireAdmin();
-  const ui = SpreadsheetApp.getUi();
-  const cfg = ensureConfigSheet();
+  const __log = startLog('changeEmailOptimizationStyle');
+  try {
+    requireAdmin();
+    const ui = SpreadsheetApp.getUi();
+    const cfg = ensureConfigSheet();
 
   const resp = ui.prompt(
     'Change Email Optimization Style',
@@ -1978,35 +2080,56 @@ function changeEmailOptimizationStyle() {
     cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(currentPrompt);
   }
   writeConfig('EMAIL_GUIDELINES', newPrompt);
-  ui.alert('Email optimization prompt updated.');
+    ui.alert('Email optimization prompt updated.');
+    endLog(__log, 'SUCCESS');
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message);
+    throw err;
+  }
 }
 
 function revertToPreviousCustomization() {
-  const ui = SpreadsheetApp.getUi();
-  const cfg = ensureConfigSheet();
-  const prev = cfg.getRange(PREVIOUS_PROMPT_ROW, 2).getValue();
-  if (!prev) {
-    ui.alert('No previous customization style found.');
-    return;
+  const __log = startLog('revertToPreviousCustomization');
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const cfg = ensureConfigSheet();
+    const prev = cfg.getRange(PREVIOUS_PROMPT_ROW, 2).getValue();
+    if (!prev) {
+      ui.alert('No previous customization style found.');
+      return;
+    }
+    const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
+    cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
+    cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(prev);
+    ui.alert('Reverted to previous customization style.');
+    endLog(__log, 'SUCCESS');
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message);
+    throw err;
   }
-  const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
-  cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
-  cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(prev);
-  ui.alert('Reverted to previous customization style.');
 }
 
 function revertToDefaultCustomization() {
-  const cfg = ensureConfigSheet();
-  const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
-  cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
-  cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(DEFAULT_EMAIL_GUIDELINES);
-  SpreadsheetApp.getUi().alert('Reverted to default email customization.');
+  const __log = startLog('revertToDefaultCustomization');
+  try {
+    const cfg = ensureConfigSheet();
+    const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
+    cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
+    cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(DEFAULT_EMAIL_GUIDELINES);
+    SpreadsheetApp.getUi().alert('Reverted to default email customization.');
+    endLog(__log, 'SUCCESS');
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message);
+    throw err;
+  }
 }
 
 function changeCustomInfoStyle() {
-  requireAdmin();
-  const ui = SpreadsheetApp.getUi();
-  const cfg = ensureConfigSheet();
+  const __log = startLog('changeCustomInfoStyle');
+  try {
+    requireAdmin();
+    const ui = SpreadsheetApp.getUi();
+    const cfg = ensureConfigSheet();
 
   const resp = ui.prompt(
     'Change Custom Info Style',
@@ -2077,29 +2200,48 @@ function changeCustomInfoStyle() {
   writeConfig('CUSTOM_INFO_GUIDELINES', newPrompt);
   // Ensure the visible cell shows the updated prompt immediately
   cfg.getRange(INFO_PROMPT_ROW, 2).setValue(newPrompt);
-  ui.alert('Custom info prompt updated.');
+    ui.alert('Custom info prompt updated.');
+    endLog(__log, 'SUCCESS');
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message);
+    throw err;
+  }
 }
 
 function revertToPreviousInfoStyle() {
-  const ui = SpreadsheetApp.getUi();
-  const cfg = ensureConfigSheet();
-  const prev = cfg.getRange(PREVIOUS_INFO_ROW, 2).getValue();
-  if (!prev) {
-    ui.alert('No previous custom info style found.');
-    return;
+  const __log = startLog('revertToPreviousInfoStyle');
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const cfg = ensureConfigSheet();
+    const prev = cfg.getRange(PREVIOUS_INFO_ROW, 2).getValue();
+    if (!prev) {
+      ui.alert('No previous custom info style found.');
+      return;
+    }
+    const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
+    cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
+    cfg.getRange(INFO_PROMPT_ROW, 2).setValue(prev);
+    ui.alert('Reverted to previous custom info style.');
+    endLog(__log, 'SUCCESS');
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message);
+    throw err;
   }
-  const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
-  cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
-  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(prev);
-  ui.alert('Reverted to previous custom info style.');
 }
 
 function revertToDefaultInfoStyle() {
-  const cfg = ensureConfigSheet();
-  const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
-  cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
-  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(DEFAULT_CUSTOM_INFO_GUIDELINES);
-  SpreadsheetApp.getUi().alert('Reverted to default custom info style.');
+  const __log = startLog('revertToDefaultInfoStyle');
+  try {
+    const cfg = ensureConfigSheet();
+    const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
+    cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
+    cfg.getRange(INFO_PROMPT_ROW, 2).setValue(DEFAULT_CUSTOM_INFO_GUIDELINES);
+    SpreadsheetApp.getUi().alert('Reverted to default custom info style.');
+    endLog(__log, 'SUCCESS');
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message);
+    throw err;
+  }
 }
 
 /**
@@ -2108,14 +2250,18 @@ function revertToDefaultInfoStyle() {
  * and writes only the final customization to the sheet.
  */
 function runCombinedScrapesOptimized() {
-  const ui = SpreadsheetApp.getUi();
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
+  const __log = startLog('runCombinedScrapesOptimized');
+  let rowsInfo = '';
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
   const flagCol = letterToColumn(getColumnConfig('FIND_OWNER_INFO_COL_LETTER'));
   const data = sheet.getDataRange().getValues();
   const startTime = new Date();
 
-  const flaggedRows = data.map((row, index) => ({ row, index })) // Keep original index
-                         .filter(item => item.row[flagCol - 1] === 1);
+    const flaggedRows = data.map((row, index) => ({ row, index })) // Keep original index
+                           .filter(item => item.row[flagCol - 1] === 1);
+    rowsInfo = flaggedRows.map(r => r.index + 1).join(',');
 
   if (flaggedRows.length === 0) {
     ui.alert('🛑 No rows flagged with "1" to process.');
@@ -2185,12 +2331,17 @@ function runCombinedScrapesOptimized() {
   // 👇 *** ADD THIS LINE ***
   SpreadsheetApp.flush(); 
 
-  ui.alert(
-    'Process Complete!',
-    `Processed ${flaggedRows.length} rows.\n\n` +
-    `• Customizations created: ${customCount}`,
-    ui.ButtonSet.OK
-  );
+    ui.alert(
+      'Process Complete!',
+      `Processed ${flaggedRows.length} rows.\n\n` +
+      `• Customizations created: ${customCount}`,
+      ui.ButtonSet.OK
+    );
+    endLog(__log, 'SUCCESS', {rows: rowsInfo, rowsEnriched: customCount});
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message, {rows: rowsInfo});
+    throw err;
+  }
 }
 
 /**
