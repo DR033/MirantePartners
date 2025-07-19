@@ -258,21 +258,17 @@ function onOpen(e) {
   if (!sheetName || !companyCol) {
     ui.alert(
       'Toolkit not configured yet!',
-      'Please run *👑 Admin Setup → Setup Columns & Sheet Name* before using any of the menu commands.',
+      'Please run *⚙️ 0 - Setup Columns & Sheet Name* before using any of the menu commands.',
       ui.ButtonSet.OK
     );
   }
 
   // Build the main add‑on menu
   const menu = ui.createAddonMenu()
+    .addItem('⚙️ 0 - Setup Columns & Sheet Name', 'setupColumnsForThisSheet')
     // 🔍 Find…
     .addItem('🔍 1 - Enrich Data',       'enrichData')
-    .addItem('✨ Create Customization',  'runCombinedScrapesOptimized')
-    .addSubMenu(ui.createMenu('✉️ Create Full Email')
-      .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
-      .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
-      .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
-      .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
+    .addItem('✨ 2 - Create Customization',  'runCombinedScrapesOptimized')
 
     // 🚀 Upload to Apollo
     .addSubMenu(ui.createMenu('🚀 3 - Upload to Apollo')
@@ -282,9 +278,13 @@ function onOpen(e) {
   // Only add “Admin Setup” if the user is in your ADMIN_USERS list
   if (ADMIN_USERS.indexOf(userEmail) !== -1) {
     menu
+      .addSubMenu(ui.createMenu('✉️ Create Full Email - beta')
+        .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
+        .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
+        .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
+        .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
       .addSeparator()
       .addSubMenu(ui.createMenu('👑 Admin Setup')
-        .addItem('⚙️ Setup Columns & Sheet Name', 'setupColumnsForThisSheet')
         .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
         .addSeparator()
       );
@@ -309,7 +309,7 @@ function setupColumnsForThisSheet() {
        .setValues([['Description', 'Value']]);
 
   const rows = [
-    ['Sheet name (e.g., Sheet 1)', '', 'SHEET_NAME'],
+    ['Sheet name (e.g., Sheet1)', '', 'SHEET_NAME'],
     ['Column letter for Company name', '', 'COMPANY_COL_LETTER'],
     ['Column letter for Website URL', '', 'WEBSITE_COL_LETTER'],
     ['Column letter for Industry', '', 'CUSTOM_INDUSTRY_COL_LETTER'],
