@@ -57,8 +57,8 @@ function getColumnConfig(propName) {
 const MODEL = 'claude-sonnet-4-20250514';
 const TEMPERATURE = 0.4;
 const MAX_TOKENS = 350;
-const EMAIL_PROMPT_ROW = 13;
-const DEFAULT_GUIDELINES_ROW = 14;
+const EMAIL_PROMPT_ROW = 13;       // current prompt used by Claude
+const PREVIOUS_PROMPT_ROW = 14;    // stores the previous customization style
 const LAST_EMAIL_ROW = 15;
 
 // Default text for the email writing guidelines section of the system prompt
@@ -267,9 +267,12 @@ function onOpen(e) {
   const menu = ui.createAddonMenu()
     // 🔍 Find…
     .addItem('🔍 1 - Enrich Data',       'enrichData')
-    // 📂 Scrape & Customize (single entry)
-    .addItem('📂 2 - Create Email Customization',           'runCombinedScrapesOptimized')
-    
+    // ✉️ Email customization options
+    .addSubMenu(ui.createMenu('Email customization')
+      .addItem('Create customization',          'runCombinedScrapesOptimized')
+      .addItem('Revert to previous style',      'revertToPreviousCustomization')
+      .addItem('Revert to default style',       'revertToDefaultCustomization'))
+
     // 🚀 Upload to Apollo
     .addSubMenu(ui.createMenu('🚀 3 - Upload to Apollo')
       .addItem('🚀 Upload Contacts to Apollo',  'uploadContacts')
@@ -325,10 +328,12 @@ function setupColumnsForThisSheet() {
   sheet.getRange(2, 1, rows.length, 1).setFontStyle('italic');
   sheet.hideColumns(3);
 
-  // Store the default guidelines one row below for reference
-  const defaultRow = rows.length + 2; // starting row 2 plus length
-  sheet.getRange(defaultRow, 1, 1, 2)
-       .setValues([['Default Email Guidelines', DEFAULT_EMAIL_GUIDELINES]]);
+  // Reserve rows for previous prompt and last generated email
+  const prevRow = rows.length + 2; // starting row 2 plus length
+  sheet.getRange(prevRow, 1, 1, 2)
+       .setValues([['Previous Email Prompt', '']]);
+  sheet.getRange(prevRow + 1, 1, 1, 2)
+       .setValues([['Last Email Customization', '']]);
 
   ui.alert('✔ 999-config sheet initialized. Please fill in the values and rerun the setup when done.');
 }
@@ -1879,12 +1884,7 @@ function changeEmailOptimizationStyle() {
     return;
   }
 
-  let guidelines = cfg.getRange(DEFAULT_GUIDELINES_ROW, 2).getValue();
-  if (!guidelines) {
-    guidelines = DEFAULT_EMAIL_GUIDELINES;
-    cfg.getRange(DEFAULT_GUIDELINES_ROW, 1, 1, 2)
-       .setValues([['Default Email Guidelines', guidelines]]);
-  }
+  let guidelines = DEFAULT_EMAIL_GUIDELINES;
 
   const lastEmail = cfg.getRange(LAST_EMAIL_ROW, 2).getValue();
 
@@ -1934,8 +1934,34 @@ function changeEmailOptimizationStyle() {
     return;
   }
 
+  const currentPrompt = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
+  if (currentPrompt) {
+    cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(currentPrompt);
+  }
   cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(newPrompt);
-  ui.alert('Email optimization prompt updated on row ' + EMAIL_PROMPT_ROW + '.');
+  ui.alert('Email optimization prompt updated.');
+}
+
+function revertToPreviousCustomization() {
+  const ui = SpreadsheetApp.getUi();
+  const cfg = ensureConfigSheet();
+  const prev = cfg.getRange(PREVIOUS_PROMPT_ROW, 2).getValue();
+  if (!prev) {
+    ui.alert('No previous customization style found.');
+    return;
+  }
+  const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
+  cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
+  cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(prev);
+  ui.alert('Reverted to previous customization style.');
+}
+
+function revertToDefaultCustomization() {
+  const cfg = ensureConfigSheet();
+  const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
+  cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
+  cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(DEFAULT_EMAIL_GUIDELINES);
+  SpreadsheetApp.getUi().alert('Reverted to default email customization.');
 }
 
 /**
