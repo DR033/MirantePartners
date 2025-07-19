@@ -67,42 +67,6 @@ const INFO_PROMPT_ROW = 16;        // active custom info guidelines
 const PREVIOUS_INFO_ROW = 17;      // previous custom info prompt
 const LAST_INFO_ROW = 18;
 
-// ---------------------------------------------------------------------------
-// Basic logging to a dedicated "// Logs" sheet
-// ---------------------------------------------------------------------------
-
-function getLogSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  return ss.getSheetByName('// Logs');
-}
-
-function ensureLogSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName('// Logs');
-  if (!sheet) {
-    sheet = ss.insertSheet('// Logs');
-    sheet.getRange(1, 1, 1, 4)
-         .setValues([[
-           'Timestamp',
-           'Function',
-           'Duration (s)',
-           'Flagged Rows'
-         ]]);
-  }
-  return sheet;
-}
-
-function logExecution(funcName, startTime, flaggedRows) {
-  const sheet = ensureLogSheet();
-  const duration = Math.round((Date.now() - startTime) / 1000);
-  sheet.appendRow([
-    new Date(),
-    funcName,
-    duration,
-    flaggedRows === undefined ? '' : flaggedRows
-  ]);
-}
-
 // Default text for the email writing guidelines section of the system prompt
 const DEFAULT_EMAIL_GUIDELINES = `Context & Purpose
   You are Diego Rosário from Mirante Partners, an M&A investor writing a personalized cold outreach email to the owner of a private company.
@@ -345,7 +309,6 @@ function onOpen(e) {
  * Saved in the // Config sheet so each spreadsheet retains its own setup.
  */
 function setupColumnsForThisSheet() {
-  const startTime = new Date();
   requireAdmin();
 
   const ui    = SpreadsheetApp.getUi();
@@ -393,14 +356,12 @@ function setupColumnsForThisSheet() {
   sheet.getRange(infoRow, 1, 3, 1).setFontStyle('italic');
 
   ui.alert('✔ // Config sheet created. Please fill in the values before running any function.');
-  logExecution('setupColumnsForThisSheet', startTime);
 }
 
 /**
  * Prompt for API keys (Anthropic, Apollo, OpenAI and BrightData).
  */
 function setupApiKey() {
-  const startTime = new Date();
   requireAdmin();
   const ui = SpreadsheetApp.getUi();
   const scriptProps = PropertiesService.getScriptProperties();
@@ -426,7 +387,6 @@ function setupApiKey() {
   });
 
   ui.alert('API keys saved to Script Properties');
-  logExecution('setupApiKey', startTime);
 }
 
 /**
@@ -1035,7 +995,6 @@ function refreshSequences() {
  *   ⑤ Enrol the contact in the chosen sequence
  */
 function uploadContacts() {
-  const startTime = new Date();
   // --- As configurações globais e da planilha continuam iguais ---
   const activeSS = SpreadsheetApp.getActiveSpreadsheet();
   const sheet    = activeSS.getSheetByName(getConfig('SHEET_NAME'));
@@ -1153,7 +1112,6 @@ const senderMap = buildLookupMap(activeSS, 'Senders_Lookup');
   });
 
   SpreadsheetApp.getUi().alert(`Uploaded ${processed} contacts to Apollo.`);
-  logExecution('uploadContacts', startTime);
 }
 
 /**
@@ -1383,11 +1341,9 @@ function getMXDomain(email) {
 }
 
 function refreshLookups() {
-   const startTime = new Date();
    refreshSenders();
    refreshSequences();
    applyLookupDropdowns();
-   logExecution('refreshLookups', startTime);
 }
 
 function getApiKey(keyName) {
@@ -1544,7 +1500,6 @@ function enrichData() {
 
   // --- Identify rows to process ---
   const flaggedRows = [];
-  let flaggedCount = 0;
   for (let i = 1; i < allData.length; i++) {
     if (Number(allData[i][flagCol - 1]) === 1) {
       flaggedRows.push({
@@ -1555,11 +1510,8 @@ function enrichData() {
     }
   }
 
-  flaggedCount = flaggedRows.length;
-
   if (flaggedRows.length === 0) {
     SpreadsheetApp.getUi().alert('No rows were flagged with "1" to process.');
-    logExecution('enrichData', startTime, flaggedCount);
     return;
   }
   console.log(`Found ${flaggedRows.length} rows to process.`);
@@ -1743,8 +1695,6 @@ function enrichData() {
   } catch (e) {
     console.error(`A critical error occurred during the enrichment process: ${e.toString()}`, e.stack);
     SpreadsheetApp.getUi().alert('An unexpected error occurred. Please check the logs for details.');
-  } finally {
-    logExecution('enrichData', startTime, flaggedCount);
   }
 }
 
@@ -1804,7 +1754,6 @@ function rateLimitedAnthropicFetch(url, options) {
  * NEW - Orchestrates a bulk, in-memory scrape and generates a full email for each flagged row.
  */
 function createFullEmail() {
-  const startTime = new Date();
   const ui = SpreadsheetApp.getUi();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
   if (!sheet) {
@@ -1820,11 +1769,9 @@ function createFullEmail() {
   // Find all rows flagged with "1"
   const flaggedRows = data.map((row, index) => ({ row, index }))
                          .filter(item => item.row[flagCol - 1] === 1);
-  const flaggedCount = flaggedRows.length;
 
   if (flaggedRows.length === 0) {
     ui.alert('🛑 No rows flagged with "1" to process.');
-    logExecution('createFullEmail', startTime, flaggedCount);
     return;
   }
 
@@ -1838,7 +1785,6 @@ function createFullEmail() {
   const response = ui.alert('Start Customization?', alertMessage, ui.ButtonSet.OK_CANCEL);
   if (response !== ui.Button.OK) {
     ui.alert('Process cancelled.');
-    logExecution('createFullEmail', startTime, flaggedCount);
     return;
   }
 
@@ -1954,7 +1900,6 @@ function createFullEmail() {
     `• Emails created: ${emailsCreated}`,
     ui.ButtonSet.OK
   );
-  logExecution('createFullEmail', startTime, flaggedCount);
 }
 
 /**
@@ -1962,7 +1907,6 @@ function createFullEmail() {
  * Saves Claude's suggested prompt to row EMAIL_PROMPT_ROW of // Config.
  */
 function changeEmailOptimizationStyle() {
-  const startTime = new Date();
   requireAdmin();
   const ui = SpreadsheetApp.getUi();
   const cfg = ensureConfigSheet();
@@ -1972,14 +1916,10 @@ function changeEmailOptimizationStyle() {
     'Enter your feedback for improving the email customization:',
     ui.ButtonSet.OK_CANCEL
   );
-  if (resp.getSelectedButton() !== ui.Button.OK) {
-    logExecution('changeEmailOptimizationStyle', startTime);
-    return;
-  }
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
   const feedback = resp.getResponseText().trim();
   if (!feedback) {
     ui.alert('No feedback entered.');
-    logExecution('changeEmailOptimizationStyle', startTime);
     return;
   }
 
@@ -2022,7 +1962,6 @@ function changeEmailOptimizationStyle() {
 
   if (apiResp.getResponseCode() !== 200) {
     ui.alert('Claude error: ' + apiResp.getContentText());
-    logExecution('changeEmailOptimizationStyle', startTime);
     return;
   }
 
@@ -2031,7 +1970,6 @@ function changeEmailOptimizationStyle() {
     newPrompt = JSON.parse(apiResp.getContentText()).content[0].text.trim();
   } catch (e) {
     ui.alert('Failed to parse Claude response');
-    logExecution('changeEmailOptimizationStyle', startTime);
     return;
   }
 
@@ -2041,38 +1979,31 @@ function changeEmailOptimizationStyle() {
   }
   writeConfig('EMAIL_GUIDELINES', newPrompt);
   ui.alert('Email optimization prompt updated.');
-  logExecution('changeEmailOptimizationStyle', startTime);
 }
 
 function revertToPreviousCustomization() {
-  const startTime = new Date();
   const ui = SpreadsheetApp.getUi();
   const cfg = ensureConfigSheet();
   const prev = cfg.getRange(PREVIOUS_PROMPT_ROW, 2).getValue();
   if (!prev) {
     ui.alert('No previous customization style found.');
-    logExecution('revertToPreviousCustomization', startTime);
     return;
   }
   const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
   cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
   cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(prev);
   ui.alert('Reverted to previous customization style.');
-  logExecution('revertToPreviousCustomization', startTime);
 }
 
 function revertToDefaultCustomization() {
-  const startTime = new Date();
   const cfg = ensureConfigSheet();
   const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
   cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
   cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(DEFAULT_EMAIL_GUIDELINES);
   SpreadsheetApp.getUi().alert('Reverted to default email customization.');
-  logExecution('revertToDefaultCustomization', startTime);
 }
 
 function changeCustomInfoStyle() {
-  const startTime = new Date();
   requireAdmin();
   const ui = SpreadsheetApp.getUi();
   const cfg = ensureConfigSheet();
@@ -2082,14 +2013,10 @@ function changeCustomInfoStyle() {
     'Enter your feedback for improving the custom info paragraph:',
     ui.ButtonSet.OK_CANCEL
   );
-  if (resp.getSelectedButton() !== ui.Button.OK) {
-    logExecution('changeCustomInfoStyle', startTime);
-    return;
-  }
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
   const feedback = resp.getResponseText().trim();
   if (!feedback) {
     ui.alert('No feedback entered.');
-    logExecution('changeCustomInfoStyle', startTime);
     return;
   }
 
@@ -2132,7 +2059,6 @@ function changeCustomInfoStyle() {
 
   if (apiResp.getResponseCode() !== 200) {
     ui.alert('Claude error: ' + apiResp.getContentText());
-    logExecution('changeCustomInfoStyle', startTime);
     return;
   }
 
@@ -2141,7 +2067,6 @@ function changeCustomInfoStyle() {
     newPrompt = JSON.parse(apiResp.getContentText()).content[0].text.trim();
   } catch (e) {
     ui.alert('Failed to parse Claude response');
-    logExecution('changeCustomInfoStyle', startTime);
     return;
   }
 
@@ -2153,34 +2078,28 @@ function changeCustomInfoStyle() {
   // Ensure the visible cell shows the updated prompt immediately
   cfg.getRange(INFO_PROMPT_ROW, 2).setValue(newPrompt);
   ui.alert('Custom info prompt updated.');
-  logExecution('changeCustomInfoStyle', startTime);
 }
 
 function revertToPreviousInfoStyle() {
-  const startTime = new Date();
   const ui = SpreadsheetApp.getUi();
   const cfg = ensureConfigSheet();
   const prev = cfg.getRange(PREVIOUS_INFO_ROW, 2).getValue();
   if (!prev) {
     ui.alert('No previous custom info style found.');
-    logExecution('revertToPreviousInfoStyle', startTime);
     return;
   }
   const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
   cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
   cfg.getRange(INFO_PROMPT_ROW, 2).setValue(prev);
   ui.alert('Reverted to previous custom info style.');
-  logExecution('revertToPreviousInfoStyle', startTime);
 }
 
 function revertToDefaultInfoStyle() {
-  const startTime = new Date();
   const cfg = ensureConfigSheet();
   const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
   cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
   cfg.getRange(INFO_PROMPT_ROW, 2).setValue(DEFAULT_CUSTOM_INFO_GUIDELINES);
   SpreadsheetApp.getUi().alert('Reverted to default custom info style.');
-  logExecution('revertToDefaultInfoStyle', startTime);
 }
 
 /**
@@ -2189,19 +2108,17 @@ function revertToDefaultInfoStyle() {
  * and writes only the final customization to the sheet.
  */
 function runCombinedScrapesOptimized() {
-  const startTime = new Date();
   const ui = SpreadsheetApp.getUi();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
   const flagCol = letterToColumn(getColumnConfig('FIND_OWNER_INFO_COL_LETTER'));
   const data = sheet.getDataRange().getValues();
+  const startTime = new Date();
 
   const flaggedRows = data.map((row, index) => ({ row, index })) // Keep original index
                          .filter(item => item.row[flagCol - 1] === 1);
-  const flaggedCount = flaggedRows.length;
 
   if (flaggedRows.length === 0) {
     ui.alert('🛑 No rows flagged with "1" to process.');
-    logExecution('runCombinedScrapesOptimized', startTime, flaggedCount);
     return;
   }
   // ---  START: ADDED UI ALERT ---
@@ -2216,7 +2133,6 @@ function runCombinedScrapesOptimized() {
   // If user clicks "Cancel" or closes the dialog, stop the script.
   if (response !== ui.Button.OK) {
     ui.alert('Process cancelled.');
-    logExecution('runCombinedScrapesOptimized', startTime, flaggedCount);
     return;
   }
   // ---  END: ADDED UI ALERT ---
@@ -2275,7 +2191,6 @@ function runCombinedScrapesOptimized() {
     `• Customizations created: ${customCount}`,
     ui.ButtonSet.OK
   );
-  logExecution('runCombinedScrapesOptimized', startTime, flaggedCount);
 }
 
 /**
