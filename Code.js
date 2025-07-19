@@ -1787,7 +1787,11 @@ function enrichData() {
       SpreadsheetApp.getUi().alert('An unexpected error occurred. Please check the logs for details.');
       endLog(__log, 'ERROR: ' + e.message, {rows: rowsInfo});
     }
+  } catch (err) {
+    endLog(__log, 'ERROR: ' + err.message, {rows: rowsInfo});
+    throw err;
   }
+}
 
 /**
  * Fetch from Anthropic with a 30‑calls/minute shared rate limit.
