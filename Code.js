@@ -18,6 +18,11 @@ function ensureConfigSheet() {
     sheet = ss.insertSheet('999-config');
     sheet.getRange(1, 1, 1, 2).setValues([['Description', 'Value']]);
     sheet.hideColumns(3); // store keys internally
+    // Ensure description and value columns clip overflowing text
+    sheet.getRange('A:B').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  } else {
+    // Apply clipping whenever this function runs to keep formatting consistent
+    sheet.getRange('A:B').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
   }
   return sheet;
 }
@@ -101,19 +106,14 @@ function normalizeDomain(url) {
   }
 }
 
-function buildSystemPrompt() {
-  // CORREÇÃO: Usa a função getColumnConfig para ler as propriedades do DOCUMENTO.
-  // We still need the owner column for the prompt's instructions.
-  const ownerCol = getColumnConfig('OWNER_COL_LETTER');
- 
-  return `Context & Purpose
+const DEFAULT_CUSTOM_INFO_PROMPT = `Context & Purpose
 You are generating personalized observations for business outreach emails. These observations demonstrate research and create connection points while maintaining professional authenticity. The goal is to sound like a knowledgeable professional who has genuinely researched the recipient, not someone trying to impress with industry expertise.
 
 Input Data Structure
 - Company Name
 - Homepage content (scraped)
 - About Us section (scraped)
-- Column ${ownerCol}: Recipient's name (use for context - address them directly as "you" in the observation)
+- Column {{OWNER_COL}}: Recipient's name (use for context - address them directly as "you" in the observation)
 - Owner+Company combined text (scraped)
 - Scraped Owner LinkedIn profile text
 - Additional scraped page contents (up to 5 pages)
@@ -146,8 +146,18 @@ Key Success Criteria
 - Maintains professional boundaries
 - Shows authentic interest rather than sales manipulation
 - Balances knowledge with humility
-- ALWAYS addresses the recipient directly using "you/your" rather than their name in third person
-`;
+- ALWAYS addresses the recipient directly using "you/your" rather than their name in third person`;
+
+function buildSystemPrompt() {
+  // CORREÇÃO: Usa a função getColumnConfig para ler as propriedades do DOCUMENTO.
+  // We still need the owner column for the prompt's instructions.
+  const ownerCol = getColumnConfig('OWNER_COL_LETTER');
+
+  const props = PropertiesService.getDocumentProperties();
+  const stored = props.getProperty('CUSTOM_INFO_PROMPT');
+  const template = stored || DEFAULT_CUSTOM_INFO_PROMPT;
+
+  return template.replace('{{OWNER_COL}}', ownerCol);
 }
 
 function buildSystemPrompt2() {
@@ -274,6 +284,7 @@ function onOpen(e) {
       .addSubMenu(ui.createMenu('👑 Admin Setup')
         .addItem('⚙️ Setup Columns & Sheet Name', 'setupColumnsForThisSheet')
         .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
+        .addItem('🎨 Change Custom Info Style',   'changeCustomInfoStyle')
         .addSeparator()
         .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
       );
@@ -314,8 +325,10 @@ function setupColumnsForThisSheet() {
   sheet.getRange(2, 1, rows.length, 3).setValues(rows);
   sheet.getRange(2, 1, rows.length, 1).setFontStyle('italic');
   sheet.hideColumns(3);
+  // Keep values tidy by clipping overflow in the first two columns
+  sheet.getRange('A:B').setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
 
-  ui.alert('✔ 999-config sheet initialized. Please fill in the values and rerun the setup when done.');
+  ui.alert('✔ 999-config sheet created. Please fill in the values before running any function.');
 }
 
 /**
@@ -347,6 +360,24 @@ function setupApiKey() {
   });
 
   ui.alert('API keys saved to Script Properties');
+}
+
+/**
+ * Update the system prompt used for custom information generation.
+ */
+function changeCustomInfoStyle() {
+  requireAdmin();
+  const ui = SpreadsheetApp.getUi();
+  const props = PropertiesService.getDocumentProperties();
+  const current = props.getProperty('CUSTOM_INFO_PROMPT') || DEFAULT_CUSTOM_INFO_PROMPT;
+
+  const resp = ui.prompt('Change Custom Info Style', current, ui.ButtonSet.OK_CANCEL);
+  if (resp.getSelectedButton() === ui.Button.OK) {
+    props.setProperty('CUSTOM_INFO_PROMPT', resp.getResponseText().trim());
+    ui.alert('Custom info style updated.');
+  } else {
+    ui.alert('Update cancelled.');
+  }
 }
 
 /**
@@ -638,35 +669,6 @@ function runCustomization(rowNum, sheet = null) {
   // Pause to respect rate limits
   Utilities.sleep(2000);
   return 1;
-}
-
-function applyBatchUpdates(sheet, updates) {
-  if (updates.length === 0) return;
-
-  console.log(`Applying ${updates.length} batch updates...`);
-  
-  // Group updates by row for efficiency
-  const rowUpdates = {};
-  
-  for (const update of updates) {
-    if (!rowUpdates[update.row]) {
-      rowUpdates[update.row] = [];
-    }
-    rowUpdates[update.row].push(update);
-  }
-
-  // Apply updates row by row (still more efficient than individual cells)
-  for (const [row, rowUpdateList] of Object.entries(rowUpdates)) {
-    try {
-      for (const update of rowUpdateList) {
-        sheet.getRange(parseInt(row), update.col).setValue(update.value);
-      }
-    } catch (error) {
-      console.error(`Error updating row ${row}: ${error.message}`);
-    }
-  }
-  
-  console.log('Batch updates completed');
 }
 
 function applyBatchUpdates(sheet, updates) {
@@ -1730,6 +1732,21 @@ function createFullEmail() {
     return;
   }
 
+  // ---  START: ADDED UI ALERT ---
+  const n = flaggedRows.length;
+  const alertMessage =
+      `You are about to start the customization process for ${n} row(s).\n\n` +
+      `This may a few minutes. Please do not close or refresh this sheet until you see the final "Process Complete!" message.\n\n` +
+      `Press OK to begin.`;
+
+  const response = ui.alert('Start Customization?', alertMessage, ui.ButtonSet.OK_CANCEL);
+
+  if (response !== ui.Button.OK) {
+    ui.alert('Process cancelled.');
+    return;
+  }
+  // ---  END: ADDED UI ALERT ---
+
   console.log(`Starting bulk email creation for ${flaggedRows.length} rows...`);
 
   // 1️⃣ & 2️⃣ Scrape all data in memory first
@@ -1859,9 +1876,9 @@ function runCombinedScrapesOptimized() {
   }
   // ---  START: ADDED UI ALERT ---
   const n = flaggedRows.length;
-  const alertMessage = 
+  const alertMessage =
       `You are about to start the customization process for ${n} row(s).\n\n` +
-      `This may a few  minutes. Please do not close or refresh this sheet until you see the final "Process Complete!" message.\n\n` +
+      `This may a few minutes. Please do not close or refresh this sheet until you see the final "Process Complete!" message.\n\n` +
       `Press OK to begin.`;
       
   const response = ui.alert('Start Customization?', alertMessage, ui.ButtonSet.OK_CANCEL);
