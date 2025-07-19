@@ -82,7 +82,7 @@ function ensureLogsSheet() {
 
 function logAction(funcName, status, duration, rows) {
   const sheet = ensureLogsSheet();
-  const credit = Number(readConfig('CREDITS_' + funcName)) || 0;
+  const credit = getCreditCost(funcName);
   const total = (rows === undefined || rows === '' || rows === 0)
                 ? credit
                 : credit * Number(rows);
@@ -481,7 +481,8 @@ function defineCredits() {
       );
       if (resp.getSelectedButton() === ui.Button.OK) {
         const val = resp.getResponseText().trim();
-        if (val !== '') writeConfig('CREDITS_' + name, val);
+        if (val !== '') PropertiesService.getScriptProperties()
+                                   .setProperty('CREDITS_' + name, val);
       }
     });
 
@@ -1474,6 +1475,13 @@ function getApiKey(keyName) {
     throw new Error(`${keyName} not found in Script Properties`);
   }
   return val;
+}
+
+function getCreditCost(funcName) {
+  const val = PropertiesService
+                .getScriptProperties()
+                .getProperty('CREDITS_' + funcName);
+  return val ? Number(val) : 0;
 }
 
 
