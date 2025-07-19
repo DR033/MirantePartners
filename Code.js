@@ -267,11 +267,12 @@ function onOpen(e) {
   const menu = ui.createAddonMenu()
     // 🔍 Find…
     .addItem('🔍 1 - Enrich Data',       'enrichData')
-    // ✉️ Email customization options
-    .addSubMenu(ui.createMenu('Email customization')
-      .addItem('Create customization',          'runCombinedScrapesOptimized')
-      .addItem('Revert to previous style',      'revertToPreviousCustomization')
-      .addItem('Revert to default style',       'revertToDefaultCustomization'))
+    .addItem('✨ Create Customization',  'runCombinedScrapesOptimized')
+    .addSubMenu(ui.createMenu('✉️ Create Full Email')
+      .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
+      .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
+      .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
+      .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
 
     // 🚀 Upload to Apollo
     .addSubMenu(ui.createMenu('🚀 3 - Upload to Apollo')
@@ -286,8 +287,6 @@ function onOpen(e) {
         .addItem('⚙️ Setup Columns & Sheet Name', 'setupColumnsForThisSheet')
         .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
         .addSeparator()
-        .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
-        .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
       );
   }
 
@@ -334,6 +333,7 @@ function setupColumnsForThisSheet() {
        .setValues([['Previous Email Prompt', '']]);
   sheet.getRange(prevRow + 1, 1, 1, 2)
        .setValues([['Last Email Customization', '']]);
+  sheet.getRange(prevRow, 1, 2, 1).setFontStyle('italic');
 
   ui.alert('✔ 999-config sheet initialized. Please fill in the values and rerun the setup when done.');
 }
@@ -1827,6 +1827,12 @@ function createFullEmail() {
         const email = JSON.parse(resp.getContentText()).content[0].text.trim();
         allSheetUpdates.push({ row: rowNum, col: outputCol, value: email });
         emailsCreated++;
+        try {
+          const cfg = ensureConfigSheet();
+          cfg.getRange(LAST_EMAIL_ROW, 2).setValue(email);
+        } catch (err) {
+          console.error('Failed to save latest email text:', err);
+        }
       } else {
         const errorMsg = `ERROR: HTTP ${resp.getResponseCode()}`;
         allSheetUpdates.push({ row: rowNum, col: outputCol, value: errorMsg });
