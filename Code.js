@@ -56,6 +56,37 @@ function getColumnConfig(propName) {
   return value;
 }
 
+function getLogsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return ss.getSheetByName('logs');
+}
+
+function ensureLogsSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('logs');
+  if (!sheet) {
+    sheet = ss.insertSheet('logs');
+    sheet.getRange(1, 1, 1, 4)
+         .setValues([[
+           'Timestamp',
+           'User Email',
+           'Function',
+           'Status'
+         ]]);
+  }
+  return sheet;
+}
+
+function logAction(funcName, status) {
+  const sheet = ensureLogsSheet();
+  sheet.appendRow([
+    new Date(),
+    Session.getActiveUser().getEmail(),
+    funcName,
+    status
+  ]);
+}
+
 // Default Configuration Values (overridden via setup)
 const MODEL = 'claude-sonnet-4-20250514';
 const TEMPERATURE = 0.4;
@@ -309,10 +340,12 @@ function onOpen(e) {
  * Saved in the // Config sheet so each spreadsheet retains its own setup.
  */
 function setupColumnsForThisSheet() {
-  requireAdmin();
+  const fn = 'setupColumnsForThisSheet';
+  try {
+    requireAdmin();
 
-  const ui    = SpreadsheetApp.getUi();
-  const sheet = ensureConfigSheet();
+    const ui    = SpreadsheetApp.getUi();
+    const sheet = ensureConfigSheet();
 
   // Clear existing config and write headers
   sheet.clear();
@@ -353,9 +386,15 @@ function setupColumnsForThisSheet() {
        .setValues([['Previous custom_info Prompt', '']]);
   sheet.getRange(infoRow + 2, 1, 1, 2)
        .setValues([['Last Email Customization (custom_info paragraph)', '']]);
-  sheet.getRange(infoRow, 1, 3, 1).setFontStyle('italic');
+    sheet.getRange(infoRow, 1, 3, 1).setFontStyle('italic');
 
-  ui.alert('✔ // Config sheet created. Please fill in the values before running any function.');
+    ensureLogsSheet();
+    ui.alert('✔ // Config sheet created. Please fill in the values before running any function.');
+    logAction(fn, 'Completed');
+  } catch (e) {
+    logAction(fn, 'Failed: ' + e.message);
+    throw e;
+  }
 }
 
 /**
@@ -1475,16 +1514,19 @@ function findFirstLinkedInResult(ownerName, companyName) {
  * defined elsewhere in your Apps Script project.
  */
 function enrichData() {
-  console.log('🚀 Starting the main enrichment process (Optimized)...');
-  const startTime = new Date();
+  const fn = 'enrichData';
+  try {
+    console.log('🚀 Starting the main enrichment process (Optimized)...');
+    const startTime = new Date();
 
   // --- General Setup ---
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
-  if (!sheet) {
-    console.error(`Sheet with name "${getConfig('SHEET_NAME')}" not found.`);
-    SpreadsheetApp.getUi().alert(`Error: Sheet "${getConfig('SHEET_NAME')}" not found.`);
-    return;
-  }
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
+    if (!sheet) {
+      console.error(`Sheet with name "${getConfig('SHEET_NAME')}" not found.`);
+      SpreadsheetApp.getUi().alert(`Error: Sheet "${getConfig('SHEET_NAME')}" not found.`);
+      logAction(fn, 'Failed: sheet not found');
+      return;
+    }
   const allData = sheet.getDataRange().getValues();
 
   // --- API Keys & Column Configs ---
@@ -1900,6 +1942,11 @@ function createFullEmail() {
     `• Emails created: ${emailsCreated}`,
     ui.ButtonSet.OK
   );
+    logAction(fn, 'Completed');
+  } catch (e) {
+    logAction(fn, 'Failed: ' + e.message);
+    throw e;
+  }
 }
 
 /**
@@ -2004,9 +2051,11 @@ function revertToDefaultCustomization() {
 }
 
 function changeCustomInfoStyle() {
-  requireAdmin();
-  const ui = SpreadsheetApp.getUi();
-  const cfg = ensureConfigSheet();
+  const fn = 'changeCustomInfoStyle';
+  try {
+    requireAdmin();
+    const ui = SpreadsheetApp.getUi();
+    const cfg = ensureConfigSheet();
 
   const resp = ui.prompt(
     'Change Custom Info Style',
@@ -2078,11 +2127,18 @@ function changeCustomInfoStyle() {
   // Ensure the visible cell shows the updated prompt immediately
   cfg.getRange(INFO_PROMPT_ROW, 2).setValue(newPrompt);
   ui.alert('Custom info prompt updated.');
+    logAction(fn, 'Completed');
+  } catch (e) {
+    logAction(fn, 'Failed: ' + e.message);
+    throw e;
+  }
 }
 
 function revertToPreviousInfoStyle() {
-  const ui = SpreadsheetApp.getUi();
-  const cfg = ensureConfigSheet();
+  const fn = 'revertToPreviousInfoStyle';
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const cfg = ensureConfigSheet();
   const prev = cfg.getRange(PREVIOUS_INFO_ROW, 2).getValue();
   if (!prev) {
     ui.alert('No previous custom info style found.');
@@ -2092,14 +2148,26 @@ function revertToPreviousInfoStyle() {
   cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
   cfg.getRange(INFO_PROMPT_ROW, 2).setValue(prev);
   ui.alert('Reverted to previous custom info style.');
+    logAction(fn, 'Completed');
+  } catch (e) {
+    logAction(fn, 'Failed: ' + e.message);
+    throw e;
+  }
 }
 
 function revertToDefaultInfoStyle() {
-  const cfg = ensureConfigSheet();
-  const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
-  cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
-  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(DEFAULT_CUSTOM_INFO_GUIDELINES);
-  SpreadsheetApp.getUi().alert('Reverted to default custom info style.');
+  const fn = 'revertToDefaultInfoStyle';
+  try {
+    const cfg = ensureConfigSheet();
+    const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
+    cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
+    cfg.getRange(INFO_PROMPT_ROW, 2).setValue(DEFAULT_CUSTOM_INFO_GUIDELINES);
+    SpreadsheetApp.getUi().alert('Reverted to default custom info style.');
+    logAction(fn, 'Completed');
+  } catch (e) {
+    logAction(fn, 'Failed: ' + e.message);
+    throw e;
+  }
 }
 
 /**
@@ -2108,19 +2176,22 @@ function revertToDefaultInfoStyle() {
  * and writes only the final customization to the sheet.
  */
 function runCombinedScrapesOptimized() {
-  const ui = SpreadsheetApp.getUi();
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
-  const flagCol = letterToColumn(getColumnConfig('FIND_OWNER_INFO_COL_LETTER'));
-  const data = sheet.getDataRange().getValues();
-  const startTime = new Date();
+  const fn = 'runCombinedScrapesOptimized';
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
+    const flagCol = letterToColumn(getColumnConfig('FIND_OWNER_INFO_COL_LETTER'));
+    const data = sheet.getDataRange().getValues();
+    const startTime = new Date();
 
   const flaggedRows = data.map((row, index) => ({ row, index })) // Keep original index
                          .filter(item => item.row[flagCol - 1] === 1);
 
-  if (flaggedRows.length === 0) {
-    ui.alert('🛑 No rows flagged with "1" to process.');
-    return;
-  }
+    if (flaggedRows.length === 0) {
+      ui.alert('🛑 No rows flagged with "1" to process.');
+      logAction(fn, 'Failed: no rows flagged');
+      return;
+    }
   // ---  START: ADDED UI ALERT ---
   const n = flaggedRows.length;
   const alertMessage = 
@@ -2191,6 +2262,11 @@ function runCombinedScrapesOptimized() {
     `• Customizations created: ${customCount}`,
     ui.ButtonSet.OK
   );
+    logAction(fn, 'Completed');
+  } catch (e) {
+    logAction(fn, 'Failed: ' + e.message);
+    throw e;
+  }
 }
 
 /**
