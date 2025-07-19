@@ -66,14 +66,15 @@ function ensureLogsSheet() {
   let sheet = ss.getSheetByName('logs');
   if (!sheet) {
     sheet = ss.insertSheet('logs');
-    sheet.getRange(1, 1, 1, 6)
+    sheet.getRange(1, 1, 1, 7)
          .setValues([[
            'Timestamp',
            'User Email',
            'Function',
            'Status',
            'Duration (sec)',
-           'Rows'
+           'Rows',
+           'Total Cost'
          ]]);
   }
   return sheet;
@@ -81,13 +82,18 @@ function ensureLogsSheet() {
 
 function logAction(funcName, status, duration, rows) {
   const sheet = ensureLogsSheet();
+  const credit = Number(readConfig('CREDITS_' + funcName)) || 0;
+  const total = (rows === undefined || rows === '' || rows === 0)
+                ? credit
+                : credit * Number(rows);
   sheet.appendRow([
     new Date(),
     Session.getActiveUser().getEmail(),
     funcName,
     status,
     duration || '',
-    rows === undefined ? '' : rows
+    rows === undefined ? '' : rows,
+    total
   ]);
 }
 
@@ -333,6 +339,7 @@ function onOpen(e) {
             .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
             .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
           .addSeparator()
+          .addItem('🏷️ Define Credits', 'defineCredits')
         );
   }
 
@@ -435,6 +442,51 @@ function setupApiKey() {
 
   ui.alert('API keys saved to Script Properties');
   logAction(fn, 'Completed', Math.round((Date.now()-start)/1000));
+  } catch (e) {
+    logAction(fn, 'Failed: ' + e.message, Math.round((Date.now()-start)/1000));
+    throw e;
+  }
+}
+
+/**
+ * Prompt the admin to define credit cost for key functions.
+ */
+function defineCredits() {
+  const fn = 'defineCredits';
+  const start = Date.now();
+  try {
+    requireAdmin();
+    const ui = SpreadsheetApp.getUi();
+    const funcs = [
+      'setupColumnsForThisSheet',
+      'enrichData',
+      'runCombinedScrapesOptimized',
+      'changeCustomInfoStyle',
+      'revertToPreviousInfoStyle',
+      'revertToDefaultInfoStyle',
+      'uploadContacts',
+      'refreshLookups',
+      'setupApiKey',
+      'createFullEmail',
+      'changeEmailOptimizationStyle',
+      'revertToPreviousCustomization',
+      'revertToDefaultCustomization'
+    ];
+
+    funcs.forEach(name => {
+      const resp = ui.prompt(
+        'Define Credits',
+        `Enter credits cost for ${name}:`,
+        ui.ButtonSet.OK_CANCEL
+      );
+      if (resp.getSelectedButton() === ui.Button.OK) {
+        const val = resp.getResponseText().trim();
+        if (val !== '') writeConfig('CREDITS_' + name, val);
+      }
+    });
+
+    ui.alert('Credits saved.');
+    logAction(fn, 'Completed', Math.round((Date.now()-start)/1000));
   } catch (e) {
     logAction(fn, 'Failed: ' + e.message, Math.round((Date.now()-start)/1000));
     throw e;
