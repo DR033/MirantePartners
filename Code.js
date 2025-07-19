@@ -19,6 +19,9 @@ function ensureConfigSheet() {
     sheet.getRange(1, 1, 1, 2).setValues([['Description', 'Value']]);
     sheet.hideColumns(3); // store keys internally
   }
+  // Ensure columns A and B use "Clip" wrapping so long text does not expand rows
+  sheet.getRange(1, 1, sheet.getMaxRows(), 2)
+       .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
   return sheet;
 }
 
@@ -57,6 +60,108 @@ function getColumnConfig(propName) {
 const MODEL = 'claude-sonnet-4-20250514';
 const TEMPERATURE = 0.4;
 const MAX_TOKENS = 350;
+const EMAIL_PROMPT_ROW = 13;       // current prompt used by Claude
+const PREVIOUS_PROMPT_ROW = 14;    // stores the previous customization style
+const LAST_EMAIL_ROW = 15;
+const INFO_PROMPT_ROW = 16;        // active custom info guidelines
+const PREVIOUS_INFO_ROW = 17;      // previous custom info prompt
+const LAST_INFO_ROW = 18;
+
+// Default text for the email writing guidelines section of the system prompt
+const DEFAULT_EMAIL_GUIDELINES = `Context & Purpose
+  You are Diego Rosário from Mirante Partners, an M&A investor writing a personalized cold outreach email to the owner of a private company.
+  Your objective is to demonstrate genuine research and understanding of their business while professionally expressing acquisition interest.
+
+  CRITICAL PERSONALIZATION REQUIREMENTS:
+  1. Find ONE genuinely interesting, specific detail about their business (avoid obvious/generic facts)
+  2. Use conversational, natural language - avoid business jargon and buzzwords
+  3. Reference something that shows you actually read their content (not just skimmed)
+  4. Keep the owner's background mention subtle and relevant
+  5. Sound like a human, not a marketing email
+
+  2. Greeting: "Hi [Owner's first name],"
+
+  3. Opening (1-2 sentences):
+      - Start with a simple, genuine observation about their business
+      - No superlatives or excessive praise
+      - Sound like you're having a conversation, not pitching
+
+  4. Purpose & Ask (2-3 sentences):
+      - State that you're Diego from Mirante Partners, an investor who works with business owners on exits
+      - Express interest in having a conversation if they're ever considering an exit
+      - Simple request: "Would you be open to a brief conversation if this might be an appropriate time?"
+
+  5. Professional Signature Block:
+      Best regards,
+      Diego Rosário
+      Mirante Partners
+
+  Tone Guidelines:
+  - Write like you're sending a message to a colleague, not a sales prospect
+  - Be genuinely curious rather than impressed
+  - Avoid business buzzwords: "strategic," "compelling," "leverage," "ecosystem," "synergies"
+  - No excessive praise or superlatives
+  - Keep it under 100 words
+  - Just write the body of the email, without subject line
+  - Be respectful of their timing and decision-making autonomy
+  - Frame as "if you're ever considering an exit" not "I want to acquire your company"
+  - Use phrases like "appropriate time" or "if this might be of interest"
+  - Don't assume they want to sell - respect that it's their choice
+
+  AVOID AT ALL COSTS:
+  - "Caught my attention" / "I came across"
+  - "Impressive" / "exciting" / "compelling"
+  - "Strategic alignment" / "partnership opportunity" (use "acquisition" instead)
+  - "Proven track record" / "demonstrated success"
+  - Industry jargon and consultant-speak
+  - Multiple compliments in one email
+  - Overly detailed business analysis
+  - Vague language about "exploring opportunities" (be direct about acquisition)
+
+  SAMPLE PHRASES TO USE:
+  - "I'd love to have a conversation if you think this might be an appropriate time"
+  - "If you're ever considering an exit, I'd be interested in discussing"
+  - "Would you be open to a brief conversation if this is something you might consider"
+  - "I work with business owners exploring exit opportunities"
+
+  Quality Checklist:
+  - Does it respect their autonomy and timing?
+  - Would you be comfortable receiving this email?
+  - Does it sound like genuine interest, not aggressive pursuit?
+  - Is the specific detail meaningful, not just factual?`;
+
+const DEFAULT_CUSTOM_INFO_GUIDELINES = `Context & Purpose
+You are generating personalized observations for business outreach emails. These observations demonstrate research and create connection points while maintaining professional authenticity. The goal is to sound like a knowledgeable professional who has genuinely researched the recipient, not someone trying to impress with industry expertise.
+
+Length & Structure
+Aim for ~250 characters (1–2 brief sentences). Always start with "By the way" or "As an aside".
+
+Content Guidelines
+- Make a brief, intelligent observation about: Their background or career moves; Company situation or recent developments; Industry context (surface-level only)
+- Show you've done research without being overly detailed
+- Include moderate empathy and occasional opinion qualifiers: "I think that..."; "I believe that...", "Sounds like..."
+
+Tone
+- Conversational and direct – not overly pleasant or flattering
+- Sound like you're stating an interesting fact you noticed
+- Avoid trying to impress with deep industry knowledge
+- No technical rambling or extensive analysis
+- Professional but authentic
+
+Style Examples
+Example 1:
+"By the way, saw that you bought Precision Safe Sidewalks shortly after launching Blue Zone, and now you're on your second acquisition in the ADA space. Sounds like both ventures are thriving!"
+
+Example 2:
+"By the way, saw that you guys were very early adopters of Apple Newton while writing your own software for ems charting. I think it's a testament to you and Shawn's care for solving problems proactively and making life just a bit easier for our frontline responders!"
+
+Key Success Criteria
+- Demonstrates genuine research without being invasive
+- Creates natural conversation starter
+- Maintains professional boundaries
+- Shows authentic interest rather than sales manipulation
+- Balances knowledge with humility
+- ALWAYS addresses the recipient directly using "you/your" rather than their name in third person`;
 
 /**
  * Convert a column letter (e.g. "A", "AA") to its 1-based index.
@@ -102,128 +207,39 @@ function normalizeDomain(url) {
 }
 
 function buildSystemPrompt() {
-  // CORREÇÃO: Usa a função getColumnConfig para ler as propriedades do DOCUMENTO.
-  // We still need the owner column for the prompt's instructions.
+  // Use getColumnConfig to dynamically insert the owner column letter.
   const ownerCol = getColumnConfig('OWNER_COL_LETTER');
- 
-  return `Context & Purpose
-You are generating personalized observations for business outreach emails. These observations demonstrate research and create connection points while maintaining professional authenticity. The goal is to sound like a knowledgeable professional who has genuinely researched the recipient, not someone trying to impress with industry expertise.
 
-Input Data Structure
-- Company Name
-- Homepage content (scraped)
-- About Us section (scraped)
-- Column ${ownerCol}: Recipient's name (use for context - address them directly as "you" in the observation)
-- Owner+Company combined text (scraped)
-- Scraped Owner LinkedIn profile text
-- Additional scraped page contents (up to 5 pages)
+  const dataSection = `Input Data Structure:
+  - Company Name
+  - Homepage content (scraped)
+  - About Us section (scraped)
+  - Column ${ownerCol}: Recipient's name (use for context - address them directly as "you" in the observation)
+  - Owner+Company combined text (scraped)
+  - Scraped Owner LinkedIn profile text
+  - Additional scraped page contents (up to 5 pages)`;
 
-Length & Structure
-Aim for ~250 characters (1–2 brief sentences). Always start with "By the way" or "As an aside".
+  const guidelines = readConfig('CUSTOM_INFO_GUIDELINES') || DEFAULT_CUSTOM_INFO_GUIDELINES;
 
-Content Guidelines
-- Make a brief, intelligent observation about: Their background or career moves; Company situation or recent developments; Industry context (surface-level only)
-- Show you've done research without being overly detailed
-- Include moderate empathy and occasional opinion qualifiers: "I think that..."; "I believe that...", "Sounds like..."
-
-Tone
-- Conversational and direct – not overly pleasant or flattering
-- Sound like you're stating an interesting fact you noticed
-- Avoid trying to impress with deep industry knowledge
-- No technical rambling or extensive analysis
-- Professional but authentic
-
-Style Examples
-Example 1:
-"By the way, saw that you bought Precision Safe Sidewalks shortly after launching Blue Zone, and now you're on your second acquisition in the ADA space. Sounds like both ventures are thriving!"
-
-Example 2:
-"By the way, saw that you guys were very early adopters of Apple Newton while writing your own software for ems charting. I think it's a testament to you and Shawn's care for solving problems proactively and making life just a bit easier for our frontline responders!"
-
-Key Success Criteria
-- Demonstrates genuine research without being invasive
-- Creates natural conversation starter
-- Maintains professional boundaries
-- Shows authentic interest rather than sales manipulation
-- Balances knowledge with humility
-- ALWAYS addresses the recipient directly using "you/your" rather than their name in third person
-`;
+  return `${dataSection}\n\n${guidelines}`;
 }
 
 function buildSystemPrompt2() {
   // We still need the owner column for the prompt's instructions.
   const ownerCol = getColumnConfig('OWNER_COL_LETTER');
 
-  return `Context & Purpose
-  You are Diego Rosário from Mirante Partners, an M&A investor writing a personalized cold outreach email to the owner of a private company.
-  Your objective is to demonstrate genuine research and understanding of their business while professionally expressing acquisition interest.
-
-  Input Data Structure:
+  const dataSection = `Input Data Structure:
   - Company name
   - Homepage content
   - About Us section
   - Column ${ownerCol}: Owner's first name (for "you/your" references)
   - Combined Owner+Company text
   - Owner's LinkedIn bio and recent activity
-  - Additional page contents (up to 5 pages)
+  - Additional page contents (up to 5 pages)`;
 
-  CRITICAL PERSONALIZATION REQUIREMENTS:
-  1. Find ONE genuinely interesting, specific detail about their business (avoid obvious/generic facts)
-  2. Use conversational, natural language - avoid business jargon and buzzwords
-  3. Reference something that shows you actually read their content (not just skimmed)
-  4. Keep the owner's background mention subtle and relevant
-  5. Sound like a human, not a marketing email
-  
-  2. Greeting: "Hi [Owner's first name],"
-  
-  3. Opening (1-2 sentences):
-      - Start with a simple, genuine observation about their business
-      - No superlatives or excessive praise
-      - Sound like you're having a conversation, not pitching
-  
-  4. Purpose & Ask (2-3 sentences):
-      - State that you're Diego from Mirante Partners, an investor who works with business owners on exits
-      - Express interest in having a conversation if they're ever considering an exit
-      - Simple request: "Would you be open to a brief conversation if this might be an appropriate time?"
-  
-  5. Professional Signature Block:
-      Best regards,
-      Diego Rosário
-      Mirante Partners
+  const guidelines = readConfig('EMAIL_GUIDELINES') || DEFAULT_EMAIL_GUIDELINES;
 
-  Tone Guidelines:
-  - Write like you're sending a message to a colleague, not a sales prospect
-  - Be genuinely curious rather than impressed
-  - Avoid business buzzwords: "strategic," "compelling," "leverage," "ecosystem," "synergies"
-  - No excessive praise or superlatives
-  - Keep it under 100 words
-  - Just write the body of the email, without subject line
-  - Be respectful of their timing and decision-making autonomy
-  - Frame as "if you're ever considering an exit" not "I want to acquire your company"
-  - Use phrases like "appropriate time" or "if this might be of interest"
-  - Don't assume they want to sell - respect that it's their choice
-
-  AVOID AT ALL COSTS:
-  - "Caught my attention" / "I came across"
-  - "Impressive" / "exciting" / "compelling"
-  - "Strategic alignment" / "partnership opportunity" (use "acquisition" instead)
-  - "Proven track record" / "demonstrated success"
-  - Industry jargon and consultant-speak
-  - Multiple compliments in one email
-  - Overly detailed business analysis
-  - Vague language about "exploring opportunities" (be direct about acquisition)
-
-  SAMPLE PHRASES TO USE:
-  - "I'd love to have a conversation if you think this might be an appropriate time"
-  - "If you're ever considering an exit, I'd be interested in discussing"
-  - "Would you be open to a brief conversation if this is something you might consider"
-  - "I work with business owners exploring exit opportunities"
-
-  Quality Checklist:
-  - Does it respect their autonomy and timing?
-  - Would you be comfortable receiving this email?
-  - Does it sound like genuine interest, not aggressive pursuit?
-  - Is the specific detail meaningful, not just factual?`;
+  return `${dataSection}\n\n${guidelines}`;
 }
 
 function onInstall(e) {
@@ -250,18 +266,22 @@ function onOpen(e) {
   if (!sheetName || !companyCol) {
     ui.alert(
       'Toolkit not configured yet!',
-      'Please run *👑 Admin Setup → Setup Columns & Sheet Name* before using any of the menu commands.',
+      'Please run *⚙️ 0 - Setup Columns & Sheet Name* before using any of the menu commands.',
       ui.ButtonSet.OK
     );
   }
 
   // Build the main add‑on menu
   const menu = ui.createAddonMenu()
+    .addItem('⚙️ 0 - Setup Columns & Sheet Name', 'setupColumnsForThisSheet')
     // 🔍 Find…
     .addItem('🔍 1 - Enrich Data',       'enrichData')
-    // 📂 Scrape & Customize (single entry)
-    .addItem('📂 2 - Create Email Customization',           'runCombinedScrapesOptimized')
-    
+    .addSubMenu(ui.createMenu('✨ 2 - Create Customization')
+      .addItem('✨ Create Customization', 'runCombinedScrapesOptimized')
+      .addItem('🪄 Change Custom Info Style', 'changeCustomInfoStyle')
+      .addItem('↩️ Revert to previous custom info', 'revertToPreviousInfoStyle')
+      .addItem('🔄 Revert to default custom info', 'revertToDefaultInfoStyle'))
+
     // 🚀 Upload to Apollo
     .addSubMenu(ui.createMenu('🚀 3 - Upload to Apollo')
       .addItem('🚀 Upload Contacts to Apollo',  'uploadContacts')
@@ -269,14 +289,17 @@ function onOpen(e) {
     );
   // Only add “Admin Setup” if the user is in your ADMIN_USERS list
   if (ADMIN_USERS.indexOf(userEmail) !== -1) {
-    menu
-      .addSeparator()
-      .addSubMenu(ui.createMenu('👑 Admin Setup')
-        .addItem('⚙️ Setup Columns & Sheet Name', 'setupColumnsForThisSheet')
-        .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
+      menu
+        .addSubMenu(ui.createMenu('✉️ Create Full Email - beta')
+          .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
+          .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
+          .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
+          .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
         .addSeparator()
-        .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
-      );
+        .addSubMenu(ui.createMenu('👑 Admin Setup')
+          .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
+          .addSeparator()
+        );
   }
 
   menu.addToUi();
@@ -298,7 +321,7 @@ function setupColumnsForThisSheet() {
        .setValues([['Description', 'Value']]);
 
   const rows = [
-    ['Sheet name (e.g., Sheet 1)', '', 'SHEET_NAME'],
+    ['Sheet name (e.g., Sheet1)', '', 'SHEET_NAME'],
     ['Column letter for Company name', '', 'COMPANY_COL_LETTER'],
     ['Column letter for Website URL', '', 'WEBSITE_COL_LETTER'],
     ['Column letter for Industry', '', 'CUSTOM_INDUSTRY_COL_LETTER'],
@@ -308,14 +331,32 @@ function setupColumnsForThisSheet() {
     ['Column letter for output customization', '', 'OUTPUT_COL_LETTER'],
     ['Column letter to flag which rows to process', '', 'FIND_OWNER_INFO_COL_LETTER'],
     ['Column letter for Sequence ID', '', 'SEQUENCE_ID_COL_LETTER'],
-    ['Column letter for Sender ID', '', 'SENDER_ID_COL_LETTER']
+    ['Column letter for Sender ID', '', 'SENDER_ID_COL_LETTER'],
+    ['Email writing guidelines (edit if desired)', DEFAULT_EMAIL_GUIDELINES, 'EMAIL_GUIDELINES']
   ];
 
   sheet.getRange(2, 1, rows.length, 3).setValues(rows);
   sheet.getRange(2, 1, rows.length, 1).setFontStyle('italic');
   sheet.hideColumns(3);
 
-  ui.alert('✔ 999-config sheet initialized. Please fill in the values and rerun the setup when done.');
+  // Reserve rows for previous prompt and last generated email
+  const prevRow = rows.length + 2; // starting row 2 plus length
+  sheet.getRange(prevRow, 1, 1, 2)
+       .setValues([['Previous Email Prompt', '']]);
+  sheet.getRange(prevRow + 1, 1, 1, 2)
+       .setValues([['Last Email Customization', '']]);
+  sheet.getRange(prevRow, 1, 2, 1).setFontStyle('italic');
+
+  const infoRow = prevRow + 2;
+  sheet.getRange(infoRow, 1, 1, 3)
+       .setValues([['Email (custom_info paragraph) writing guidelines', DEFAULT_CUSTOM_INFO_GUIDELINES, 'CUSTOM_INFO_GUIDELINES']]);
+  sheet.getRange(infoRow + 1, 1, 1, 2)
+       .setValues([['Previous custom_info Prompt', '']]);
+  sheet.getRange(infoRow + 2, 1, 1, 2)
+       .setValues([['Last Email Customization (custom_info paragraph)', '']]);
+  sheet.getRange(infoRow, 1, 3, 1).setFontStyle('italic');
+
+  ui.alert('✔ 999-config sheet created. Please fill in the values before running any function.');
 }
 
 /**
@@ -1716,6 +1757,11 @@ function rateLimitedAnthropicFetch(url, options) {
 function createFullEmail() {
   const ui = SpreadsheetApp.getUi();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(getConfig('SHEET_NAME'));
+  if (!sheet) {
+    console.error(`Sheet with name "${getConfig('SHEET_NAME')}" not found.`);
+    ui.alert(`Error: Sheet "${getConfig('SHEET_NAME')}" not found.`);
+    return;
+  }
   const flagCol = letterToColumn(getColumnConfig('FIND_OWNER_INFO_COL_LETTER'));
   const outputCol = letterToColumn(getColumnConfig('OUTPUT_COL_LETTER'));
   const data = sheet.getDataRange().getValues();
@@ -1727,6 +1773,19 @@ function createFullEmail() {
 
   if (flaggedRows.length === 0) {
     ui.alert('🛑 No rows flagged with "1" to process.');
+    return;
+  }
+
+  // Prompt user before starting, similar to custom info customization
+  const n = flaggedRows.length;
+  const alertMessage =
+      `You are about to start the customization process for ${n} row(s).\n\n` +
+      `This may a few minutes. Please do not close or refresh this sheet until you see the final "Process Complete!" message.\n\n` +
+      `Press OK to begin.`;
+
+  const response = ui.alert('Start Customization?', alertMessage, ui.ButtonSet.OK_CANCEL);
+  if (response !== ui.Button.OK) {
+    ui.alert('Process cancelled.');
     return;
   }
 
@@ -1802,6 +1861,12 @@ function createFullEmail() {
         const email = JSON.parse(resp.getContentText()).content[0].text.trim();
         allSheetUpdates.push({ row: rowNum, col: outputCol, value: email });
         emailsCreated++;
+        try {
+          const cfg = ensureConfigSheet();
+          cfg.getRange(LAST_EMAIL_ROW, 2).setValue(email);
+        } catch (err) {
+          console.error('Failed to save latest email text:', err);
+        }
       } else {
         const errorMsg = `ERROR: HTTP ${resp.getResponseCode()}`;
         allSheetUpdates.push({ row: rowNum, col: outputCol, value: errorMsg });
@@ -1836,6 +1901,206 @@ function createFullEmail() {
     `• Emails created: ${emailsCreated}`,
     ui.ButtonSet.OK
   );
+}
+
+/**
+ * Prompt the admin for feedback to change the email optimization style.
+ * Saves Claude's suggested prompt to row EMAIL_PROMPT_ROW of 999-config.
+ */
+function changeEmailOptimizationStyle() {
+  requireAdmin();
+  const ui = SpreadsheetApp.getUi();
+  const cfg = ensureConfigSheet();
+
+  const resp = ui.prompt(
+    'Change Email Optimization Style',
+    'Enter your feedback for improving the email customization:',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  const feedback = resp.getResponseText().trim();
+  if (!feedback) {
+    ui.alert('No feedback entered.');
+    return;
+  }
+
+  let guidelines = DEFAULT_EMAIL_GUIDELINES;
+
+  const lastEmail = cfg.getRange(LAST_EMAIL_ROW, 2).getValue();
+
+  const instruction =
+    'Rewrite the email customization prompt based on the user feedback. ' +
+    'Use the original guidelines and the previous email text as context if provided. ' +
+    'IMPORTANT: Respond ONLY with the text of the new prompt and nothing else.';
+
+  const parts = [
+    instruction,
+    'ORIGINAL_EMAIL_GUIDELINES:\n' + guidelines,
+  ];
+  if (lastEmail) parts.push('LATEST_EMAIL_CUSTOMIZATION:\n' + lastEmail);
+  parts.push('USER_FEEDBACK:\n' + feedback);
+
+  const prompt = parts.join('\n\n');
+
+  const apiResp = rateLimitedAnthropicFetch(
+    'https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        'x-api-key': getApiKey('ANTHROPIC_API_KEY'),
+        'anthropic-version': '2023-06-01'
+      },
+      payload: JSON.stringify({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        temperature: TEMPERATURE,
+        system: '',
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (apiResp.getResponseCode() !== 200) {
+    ui.alert('Claude error: ' + apiResp.getContentText());
+    return;
+  }
+
+  let newPrompt;
+  try {
+    newPrompt = JSON.parse(apiResp.getContentText()).content[0].text.trim();
+  } catch (e) {
+    ui.alert('Failed to parse Claude response');
+    return;
+  }
+
+  const currentPrompt = readConfig('EMAIL_GUIDELINES');
+  if (currentPrompt) {
+    cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(currentPrompt);
+  }
+  writeConfig('EMAIL_GUIDELINES', newPrompt);
+  ui.alert('Email optimization prompt updated.');
+}
+
+function revertToPreviousCustomization() {
+  const ui = SpreadsheetApp.getUi();
+  const cfg = ensureConfigSheet();
+  const prev = cfg.getRange(PREVIOUS_PROMPT_ROW, 2).getValue();
+  if (!prev) {
+    ui.alert('No previous customization style found.');
+    return;
+  }
+  const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
+  cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
+  cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(prev);
+  ui.alert('Reverted to previous customization style.');
+}
+
+function revertToDefaultCustomization() {
+  const cfg = ensureConfigSheet();
+  const current = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
+  cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(current);
+  cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(DEFAULT_EMAIL_GUIDELINES);
+  SpreadsheetApp.getUi().alert('Reverted to default email customization.');
+}
+
+function changeCustomInfoStyle() {
+  requireAdmin();
+  const ui = SpreadsheetApp.getUi();
+  const cfg = ensureConfigSheet();
+
+  const resp = ui.prompt(
+    'Change Custom Info Style',
+    'Enter your feedback for improving the custom info paragraph:',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (resp.getSelectedButton() !== ui.Button.OK) return;
+  const feedback = resp.getResponseText().trim();
+  if (!feedback) {
+    ui.alert('No feedback entered.');
+    return;
+  }
+
+  let guidelines = DEFAULT_CUSTOM_INFO_GUIDELINES;
+
+  const lastInfo = cfg.getRange(LAST_INFO_ROW, 2).getValue();
+
+  const instruction =
+    'Rewrite the custom info prompt based on the user feedback. ' +
+    'Use the original guidelines and the previous paragraph as context if provided. ' +
+    'IMPORTANT: Respond ONLY with the text of the new prompt and nothing else.';
+
+  const parts = [
+    instruction,
+    'ORIGINAL_CUSTOM_INFO_GUIDELINES:\n' + guidelines,
+  ];
+  if (lastInfo) parts.push('LATEST_CUSTOM_INFO:\n' + lastInfo);
+  parts.push('USER_FEEDBACK:\n' + feedback);
+
+  const prompt = parts.join('\n\n');
+
+  const apiResp = rateLimitedAnthropicFetch(
+    'https://api.anthropic.com/v1/messages', {
+      method: 'post',
+      contentType: 'application/json',
+      headers: {
+        'x-api-key': getApiKey('ANTHROPIC_API_KEY'),
+        'anthropic-version': '2023-06-01'
+      },
+      payload: JSON.stringify({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        temperature: TEMPERATURE,
+        system: '',
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      muteHttpExceptions: true
+    }
+  );
+
+  if (apiResp.getResponseCode() !== 200) {
+    ui.alert('Claude error: ' + apiResp.getContentText());
+    return;
+  }
+
+  let newPrompt;
+  try {
+    newPrompt = JSON.parse(apiResp.getContentText()).content[0].text.trim();
+  } catch (e) {
+    ui.alert('Failed to parse Claude response');
+    return;
+  }
+
+  const currentPrompt = readConfig('CUSTOM_INFO_GUIDELINES');
+  if (currentPrompt) {
+    cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(currentPrompt);
+  }
+  writeConfig('CUSTOM_INFO_GUIDELINES', newPrompt);
+  // Ensure the visible cell shows the updated prompt immediately
+  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(newPrompt);
+  ui.alert('Custom info prompt updated.');
+}
+
+function revertToPreviousInfoStyle() {
+  const ui = SpreadsheetApp.getUi();
+  const cfg = ensureConfigSheet();
+  const prev = cfg.getRange(PREVIOUS_INFO_ROW, 2).getValue();
+  if (!prev) {
+    ui.alert('No previous custom info style found.');
+    return;
+  }
+  const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
+  cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
+  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(prev);
+  ui.alert('Reverted to previous custom info style.');
+}
+
+function revertToDefaultInfoStyle() {
+  const cfg = ensureConfigSheet();
+  const current = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
+  cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(current);
+  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(DEFAULT_CUSTOM_INFO_GUIDELINES);
+  SpreadsheetApp.getUi().alert('Reverted to default custom info style.');
 }
 
 /**
@@ -2193,6 +2458,14 @@ function runCustomization(rowNum, sheet, baseRowData, scrapedTexts) {
     .setValue(text)
     .setFontColor('red')
     .setFontStyle('italic');
+
+  // Store this customization for reference
+  try {
+    const cfg = ensureConfigSheet();
+    cfg.getRange(LAST_INFO_ROW, 2).setValue(text);
+  } catch (e) {
+    console.error('Failed to save latest email text:', e);
+  }
 
   Utilities.sleep(2000); // Respect rate limits
   return 1;
