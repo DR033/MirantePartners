@@ -19,6 +19,9 @@ function ensureConfigSheet() {
     sheet.getRange(1, 1, 1, 2).setValues([['Description', 'Value']]);
     sheet.hideColumns(3); // store keys internally
   }
+  // Ensure columns A and B use "Clip" wrapping so long text does not expand rows
+  sheet.getRange(1, 1, sheet.getMaxRows(), 2)
+       .setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
   return sheet;
 }
 
@@ -353,7 +356,7 @@ function setupColumnsForThisSheet() {
        .setValues([['Last Email Customization (custom_info paragraph)', '']]);
   sheet.getRange(infoRow, 1, 3, 1).setFontStyle('italic');
 
-  ui.alert('✔ 999-config sheet initialized. Please fill in the values and rerun the setup when done.');
+  ui.alert('✔ 999-config sheet created. Please fill in the values before running any function.');
 }
 
 /**
@@ -1773,6 +1776,19 @@ function createFullEmail() {
     return;
   }
 
+  // Prompt user before starting, similar to custom info customization
+  const n = flaggedRows.length;
+  const alertMessage =
+      `You are about to start the customization process for ${n} row(s).\n\n` +
+      `This may a few minutes. Please do not close or refresh this sheet until you see the final "Process Complete!" message.\n\n` +
+      `Press OK to begin.`;
+
+  const response = ui.alert('Start Customization?', alertMessage, ui.ButtonSet.OK_CANCEL);
+  if (response !== ui.Button.OK) {
+    ui.alert('Process cancelled.');
+    return;
+  }
+
   console.log(`Starting bulk email creation for ${flaggedRows.length} rows...`);
 
   // 1️⃣ & 2️⃣ Scrape all data in memory first
@@ -2060,6 +2076,8 @@ function changeCustomInfoStyle() {
     cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(currentPrompt);
   }
   writeConfig('CUSTOM_INFO_GUIDELINES', newPrompt);
+  // Ensure the visible cell shows the updated prompt immediately
+  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(newPrompt);
   ui.alert('Custom info prompt updated.');
 }
 
