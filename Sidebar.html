@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+        background-color: #f8f9fa;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      button, .button-like {
+        width: 100%;
+        padding: 10px;
+        text-align: left;
+        background-color: #fff;
+        color: #333;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: background-color 0.2s;
+      }
+      button:hover {
+        background-color: #f0f0f0;
+      }
+      .collapsible {
+        background-color: #f1f1f1;
+        cursor: pointer;
+        padding: 10px;
+        width: 100%;
+        border: none;
+        text-align: left;
+        outline: none;
+        font-size: 15px;
+        border-radius: 4px;
+        margin-top: 5px;
+      }
+      .active, .collapsible:hover {
+        background-color: #ddd;
+      }
+      .content {
+        padding: 0 10px;
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.2s ease-out;
+        background-color: #f9f9f9;
+        border-radius: 0 0 4px 4px;
+        border: 1px solid #ccc;
+        border-top: none;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+      }
+      .content button {
+        background-color: #e7e7e7;
+      }
+      #loader {
+        display: none;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #3498db;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        z-index: 1000;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loader"></div>
+    <div class="container">
+      <h3>Mirante Partners Toolkit ⛰️</h3>
+      
+      <button onclick="runFunction('setupColumnsForThisSheet')">⚙️ 0 - Setup Columns & Sheet Name</button>
+      <button onclick="runFunction('enrichData')">🔍 1 - Enrich Data</button>
+
+      <button class="collapsible">✨ 2 - Create Customization</button>
+      <div class="content">
+        <button onclick="runFunction('runCombinedScrapesOptimized')">✨ Create Customization</button>
+        <button onclick="runFunction('changeCustomInfoStyle')">🪄 Change Custom Info Style</button>
+        <button onclick="runFunction('revertToPreviousInfoStyle')">↩️ Revert to previous</button>
+        <button onclick="runFunction('revertToDefaultInfoStyle')">🔄 Revert to default</button>
+      </div>
+
+      <button class="collapsible">🚀 3 - Upload to Apollo</button>
+      <div class="content">
+        <button onclick="runFunction('uploadContacts')">🚀 Upload Contacts to Apollo</button>
+        <button onclick="runFunction('refreshLookups')">🔄 Refresh Senders & Sequences</button>
+      </div>
+      
+      <? if (isAdmin) { ?>
+        <button class="collapsible">👑 Admin Functions</button>
+        <div class="content">
+            <button onclick="runFunction('setupApiKey')">🔑 Setup API Keys (Global)</button>
+            <button class="collapsible">✉️ Create Full Email - beta</button>
+            <div class="content">
+                <button onclick="runFunction('createFullEmail')">✉️ Create Full Email (beta)</button>
+                <button onclick="runFunction('changeEmailOptimizationStyle')">🪄 Change Email Optimization Style</button>
+                <button onclick="runFunction('revertToPreviousCustomization')">↩️ Revert to previous style</button>
+                <button onclick="runFunction('revertToDefaultCustomization')">🔄 Revert to default style</button>
+            </div>
+            <button onclick="runFunction('defineCredits')">🏷️ Define Credits</button>
+        </div>
+      <? } ?>
+
+    </div>
+
+    <script>
+      function showLoader(show) {
+        document.getElementById('loader').style.display = show ? 'block' : 'none';
+      }
+
+      function runFunction(functionName) {
+        showLoader(true);
+        google.script.run
+          .withSuccessHandler(() => {
+            showLoader(false);
+          })
+          .withFailureHandler(error => {
+            showLoader(false);
+            google.script.run.showErrorToast(error.message);
+          })
+          [functionName]();
+      }
+      
+      // JavaScript for collapsible sections
+      var coll = document.getElementsByClassName("collapsible");
+      for (var i = 0; i < coll.length; i++) {
+        coll[i].addEventListener("click", function() {
+          this.classList.toggle("active");
+          var content = this.nextElementSibling;
+          if (content.style.maxHeight){
+            content.style.maxHeight = null;
+          } else {
+            content.style.maxHeight = content.scrollHeight + "px";
+          } 
+        });
+      }
+    </script>
+  </body>
+</html>
