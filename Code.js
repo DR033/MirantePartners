@@ -1958,11 +1958,11 @@ function changeEmailOptimizationStyle() {
     return;
   }
 
-  const currentPrompt = cfg.getRange(EMAIL_PROMPT_ROW, 2).getValue();
+  const currentPrompt = readConfig('EMAIL_GUIDELINES');
   if (currentPrompt) {
     cfg.getRange(PREVIOUS_PROMPT_ROW, 2).setValue(currentPrompt);
   }
-  cfg.getRange(EMAIL_PROMPT_ROW, 2).setValue(newPrompt);
+  writeConfig('EMAIL_GUIDELINES', newPrompt);
   ui.alert('Email optimization prompt updated.');
 }
 
@@ -2055,11 +2055,11 @@ function changeCustomInfoStyle() {
     return;
   }
 
-  const currentPrompt = cfg.getRange(INFO_PROMPT_ROW, 2).getValue();
+  const currentPrompt = readConfig('CUSTOM_INFO_GUIDELINES');
   if (currentPrompt) {
     cfg.getRange(PREVIOUS_INFO_ROW, 2).setValue(currentPrompt);
   }
-  cfg.getRange(INFO_PROMPT_ROW, 2).setValue(newPrompt);
+  writeConfig('CUSTOM_INFO_GUIDELINES', newPrompt);
   ui.alert('Custom info prompt updated.');
 }
 
