@@ -1,21 +1,21 @@
 /**
- * Mirante Partners Toolkit - v1.3 - 07.17.2025
+ * Mirante Partners Toolkit - v1.4 - 07.19.2025
  */
 
 // ---------------------------------------------------------------------------
-// Configuration handling using a dedicated sheet "999-config"
+// Configuration handling using a dedicated sheet "// Config"
 // ---------------------------------------------------------------------------
 
 function getConfigSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  return ss.getSheetByName('999-config');
+  return ss.getSheetByName('// Config');
 }
 
 function ensureConfigSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName('999-config');
+  let sheet = ss.getSheetByName('// Config');
   if (!sheet) {
-    sheet = ss.insertSheet('999-config');
+    sheet = ss.insertSheet('// Config');
     sheet.getRange(1, 1, 1, 2).setValues([['Description', 'Value']]);
     sheet.hideColumns(3); // store keys internally
   }
@@ -287,17 +287,16 @@ function onOpen(e) {
       .addItem('🚀 Upload Contacts to Apollo',  'uploadContacts')
       .addItem('🔄 Refresh Senders & Sequences','refreshLookups')
     );
-  // Only add “Admin Setup” if the user is in your ADMIN_USERS list
+  // Only add "Admin Functions" if the user is in your ADMIN_USERS list
   if (ADMIN_USERS.indexOf(userEmail) !== -1) {
       menu
-        .addSubMenu(ui.createMenu('✉️ Create Full Email - beta')
-          .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
-          .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
-          .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
-          .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
-        .addSeparator()
-        .addSubMenu(ui.createMenu('👑 Admin Setup')
+        .addSubMenu(ui.createMenu('👑 Admin Functions')
           .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
+          .addSubMenu(ui.createMenu('✉️ Create Full Email - beta')
+            .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
+            .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
+            .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
+            .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
           .addSeparator()
         );
   }
@@ -307,7 +306,7 @@ function onOpen(e) {
 
 /**
  * Prompt the administrator to configure column letters for this sheet.
- * Saved in the 999-config sheet so each spreadsheet retains its own setup.
+ * Saved in the // Config sheet so each spreadsheet retains its own setup.
  */
 function setupColumnsForThisSheet() {
   requireAdmin();
@@ -356,7 +355,7 @@ function setupColumnsForThisSheet() {
        .setValues([['Last Email Customization (custom_info paragraph)', '']]);
   sheet.getRange(infoRow, 1, 3, 1).setFontStyle('italic');
 
-  ui.alert('✔ 999-config sheet created. Please fill in the values before running any function.');
+  ui.alert('✔ // Config sheet created. Please fill in the values before running any function.');
 }
 
 /**
@@ -1780,7 +1779,7 @@ function createFullEmail() {
   const n = flaggedRows.length;
   const alertMessage =
       `You are about to start the customization process for ${n} row(s).\n\n` +
-      `This may a few minutes. Please do not close or refresh this sheet until you see the final "Process Complete!" message.\n\n` +
+      `This may take a few minutes. Please do not close or refresh this sheet until you see the final "Process Complete!" message.\n\n` +
       `Press OK to begin.`;
 
   const response = ui.alert('Start Customization?', alertMessage, ui.ButtonSet.OK_CANCEL);
@@ -1905,7 +1904,7 @@ function createFullEmail() {
 
 /**
  * Prompt the admin for feedback to change the email optimization style.
- * Saves Claude's suggested prompt to row EMAIL_PROMPT_ROW of 999-config.
+ * Saves Claude's suggested prompt to row EMAIL_PROMPT_ROW of // Config.
  */
 function changeEmailOptimizationStyle() {
   requireAdmin();
@@ -2126,7 +2125,7 @@ function runCombinedScrapesOptimized() {
   const n = flaggedRows.length;
   const alertMessage = 
       `You are about to start the customization process for ${n} row(s).\n\n` +
-      `This may a few  minutes. Please do not close or refresh this sheet until you see the final "Process Complete!" message.\n\n` +
+      `This may take a few minutes. Please do not close or refresh this sheet until you see the final "Process Complete!" message.\n\n` +
       `Press OK to begin.`;
       
   const response = ui.alert('Start Customization?', alertMessage, ui.ButtonSet.OK_CANCEL);
