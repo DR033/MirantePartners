@@ -297,53 +297,38 @@ const ADMIN_USERS = [
   'diego@mirantepartners.com'
 ];
 
+/**
+ * Called whenever the spreadsheet is opened.
+ * Adds a single menu item that launches the sidebar UI.
+ */
 function onOpen(e) {
   const ui = SpreadsheetApp.getUi();
+  ui.createAddonMenu()
+    .addItem('🚀 Open Toolkit Sidebar', 'showSidebar')
+    .addToUi();
+}
+
+/**
+ * Displays the custom HTML sidebar.
+ * It checks if the user is an admin and passes that information to the HTML template.
+ */
+function showSidebar() {
   const userEmail = Session.getActiveUser().getEmail();
+  const isAdmin = ADMIN_USERS.includes(userEmail);
 
-  // Warn if not configured by checking for essential properties.
-  const sheetName = readConfig('SHEET_NAME');
-  const companyCol = readConfig('COMPANY_COL_LETTER');
-  if (!sheetName || !companyCol) {
-    ui.alert(
-      'Toolkit not configured yet!',
-      'Please run *⚙️ 0 - Setup Columns & Sheet Name* before using any of the menu commands.',
-      ui.ButtonSet.OK
-    );
-  }
+  const htmlTemplate = HtmlService.createTemplateFromFile('Sidebar');
+  htmlTemplate.isAdmin = isAdmin;
 
-  // Build the main add‑on menu
-  const menu = ui.createAddonMenu()
-    .addItem('⚙️ 0 - Setup Columns & Sheet Name', 'setupColumnsForThisSheet')
-    // 🔍 Find…
-    .addItem('🔍 1 - Enrich Data',       'enrichData')
-    .addSubMenu(ui.createMenu('✨ 2 - Create Customization')
-      .addItem('✨ Create Customization', 'runCombinedScrapesOptimized')
-      .addItem('🪄 Change Custom Info Style', 'changeCustomInfoStyle')
-      .addItem('↩️ Revert to previous custom info', 'revertToPreviousInfoStyle')
-      .addItem('🔄 Revert to default custom info', 'revertToDefaultInfoStyle'))
+  const html = htmlTemplate.evaluate().setTitle('Mirante Partners Toolkit ⛰️');
+  SpreadsheetApp.getUi().showSidebar(html);
+}
 
-    // 🚀 Upload to Apollo
-    .addSubMenu(ui.createMenu('🚀 3 - Upload to Apollo')
-      .addItem('🚀 Upload Contacts to Apollo',  'uploadContacts')
-      .addItem('🔄 Refresh Senders & Sequences','refreshLookups')
-    );
-  // Only add "Admin Functions" if the user is in your ADMIN_USERS list
-  if (ADMIN_USERS.indexOf(userEmail) !== -1) {
-      menu
-        .addSubMenu(ui.createMenu('👑 Admin Functions')
-          .addItem('🔑 Setup API Keys (Global)',    'setupApiKey')
-          .addSubMenu(ui.createMenu('✉️ Create Full Email - beta')
-            .addItem('✉️ Create Full Email (beta)',    'createFullEmail')
-            .addItem('🪄 Change Email Optimization Style', 'changeEmailOptimizationStyle')
-            .addItem('↩️ Revert to previous style',      'revertToPreviousCustomization')
-            .addItem('🔄 Revert to default style',       'revertToDefaultCustomization'))
-          .addSeparator()
-          .addItem('🏷️ Define Credits', 'defineCredits')
-        );
-  }
-
-  menu.addToUi();
+/**
+ * Displays an error message as a toast notification in the spreadsheet.
+ * @param {string} message The error message to display.
+ */
+function showErrorToast(message) {
+  SpreadsheetApp.getActiveSpreadsheet().toast(message, 'Error', -1);
 }
 
 /**

@@ -30,6 +30,9 @@
       "useLocaleFromApp": true
     },
     "sheets": {
+      "homepageTrigger": {
+        "runFunction": "showSidebar"
+      },
       "onFileScopeGrantedTrigger": {
         "runFunction": "onOpen"
       }
